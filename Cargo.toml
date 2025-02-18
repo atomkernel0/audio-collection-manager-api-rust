@@ -1,0 +1,18 @@
+[package]
+name = "audio-collection-manager-rust"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+axum = "0.8.1"
+tokio = { version = "1.43.0", features = ["full"] }
+serde = { version = "1.0.217", features = ["derive"] }
+serde_json = "1.0.138"
+tower-http = { version = "0.6.2", features = ["fs"] }
+strum_macros = "0.27.1"
+lazy-regex = "3.4.1"
+surrealdb = { version = "1.5.6", features = ["kv-mem", "kv-rocksdb"] }
+
+[dev-dependencies]
+anyhow = "1.0.95"
+httpc-test = "0.1.10"
