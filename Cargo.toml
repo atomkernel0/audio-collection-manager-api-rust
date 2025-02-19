@@ -11,8 +11,15 @@ serde_json = "1.0.138"
 tower-http = { version = "0.6.2", features = ["fs"] }
 strum_macros = "0.27.1"
 lazy-regex = "3.4.1"
-surrealdb = { version = "1.5.6", features = ["kv-mem", "kv-rocksdb"] }
+surrealdb = { version = "2.2.1", features = ["kv-rocksdb", "protocol-ws"] }
 
 [dev-dependencies]
 anyhow = "1.0.95"
 httpc-test = "0.1.10"
+
+[profile.release]
+lto = true
+strip = true
+opt-level = 3
+panic = 'abort'
+codegen-units = 1

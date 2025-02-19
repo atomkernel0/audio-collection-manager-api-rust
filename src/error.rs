@@ -1,5 +1,6 @@
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
+use axum::Json;
 use serde::Serialize;
 
 pub type Result<T> = core::result::Result<T, Error>;
@@ -31,13 +32,14 @@ impl std::error::Error for Error {}
 
 impl IntoResponse for Error {
     fn into_response(self) -> Response {
-        println!("->> {:<12} - {self:?}", "INTO_RES");
+        let (status_code, client_error) = self.client_status_and_error();
 
-        let mut response = StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        let response_body = serde_json::json!({
+            "error": client_error.as_ref(),
+            "details": self.to_string()
+        });
 
-        response.extensions_mut().insert(self);
-
-        response
+        (status_code, Json(response_body)).into_response()
     }
 }
 
@@ -78,4 +80,10 @@ pub enum ClientError {
     INVALID_PARAMS,
     SERVICE_ERROR,
     RESOURCE_NOT_FOUND,
+}
+
+impl From<surrealdb::Error> for Error {
+    fn from(err: surrealdb::Error) -> Self {
+        Error::DbError(err.to_string())
+    }
 }

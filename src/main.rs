@@ -4,34 +4,59 @@ use axum::{
     extract::{Path, Query},
     middleware,
     response::{Html, IntoResponse, Response},
-    routing::{get, get_service},
+    routing::get,
     Router,
 };
 
-use model::album::AlbumModelController;
-
 use serde::Deserialize;
-use tower_http::services::ServeDir;
+use surrealdb::{
+    engine::remote::ws::{Client, Ws},
+    opt::auth::Root,
+    Surreal,
+};
 
 pub use self::error::{Error, Result};
 
+mod controllers;
 mod error;
-mod model;
+mod models;
+mod routes;
 mod web;
 
+#[derive(Clone)]
+struct AppState {
+    db: Surreal<Client>,
+}
 #[tokio::main]
-async fn main() -> Result<()> {
-    let album_mc = AlbumModelController::new().await?;
+async fn main() -> surrealdb::Result<()> {
+    let db = Surreal::new::<Ws>("127.0.0.1:8000").await?;
 
-    let routes_api = web::routes_albums::routes(album_mc.clone())
-        .route_layer(middleware::from_fn(web::mw_auth::mw_require_auth));
+    db.signin(Root {
+        username: "root",
+        password: "root",
+    })
+    .await?;
+
+    db.use_ns("music").use_db("album").await?;
+    println!("Connected to DB!");
+
+    let result = db
+        .query("INFO FOR DB")
+        .await
+        .map_err(|e| Error::DbError(e.to_string()));
+
+    println!("Database info: {:?}", result);
+
+    let app_state = AppState { db };
+
+    let routes_api = routes::albums::routes();
 
     let routes_all = Router::new()
         .merge(routes_hello())
         .merge(web::routes_login::routes())
         .nest("/api", routes_api)
-        .layer(middleware::map_response(main_response_mapper))
-        .fallback_service(routes_static());
+        .with_state(app_state)
+        .layer(middleware::map_response(main_response_mapper));
 
     let addr = SocketAddr::from(([127, 0, 0, 1], 8080));
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
@@ -51,11 +76,7 @@ async fn main_response_mapper(res: Response) -> Response {
     res
 }
 
-fn routes_static() -> Router {
-    Router::new().fallback_service(get_service(ServeDir::new("./")))
-}
-
-fn routes_hello() -> Router {
+fn routes_hello() -> Router<AppState> {
     Router::new()
         .route("/hello", get(handler_hello))
         .route("/hello2/{name}", get(handler_hello2))
