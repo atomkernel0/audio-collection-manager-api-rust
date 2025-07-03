@@ -12,6 +12,10 @@ tower-http = { version = "0.6.2", features = ["fs"] }
 strum_macros = "0.27.1"
 lazy-regex = "3.4.1"
 surrealdb = { version = "2.2.1", features = ["kv-rocksdb", "protocol-ws"] }
+jsonwebtoken = "9.3.1"
+chrono = { version = "0.4.41", features = ["serde"] }
+uuid = { version = "1.17.0", features = ["v4"] }
+dotenvy = "0.15.7"
 
 [dev-dependencies]
 anyhow = "1.0.95"

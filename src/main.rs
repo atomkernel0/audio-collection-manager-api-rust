@@ -1,16 +1,9 @@
-use std::net::SocketAddr;
+use std::{env, net::SocketAddr};
 
-use axum::{
-    extract::{Path, Query},
-    middleware,
-    response::{Html, IntoResponse, Response},
-    routing::get,
-    Router,
-};
+use axum::{middleware, response::Response, Router};
 
-use serde::Deserialize;
 use surrealdb::{
-    engine::remote::ws::{Client, Ws},
+    engine::any::{self, Any},
     opt::auth::Root,
     Surreal,
 };
@@ -21,23 +14,33 @@ mod controllers;
 mod error;
 mod models;
 mod routes;
+mod services;
 mod web;
 
 #[derive(Clone)]
 struct AppState {
-    db: Surreal<Client>,
+    db: Surreal<Any>,
 }
 #[tokio::main]
-async fn main() -> surrealdb::Result<()> {
-    let db = Surreal::new::<Ws>("127.0.0.1:8000").await?;
+async fn main() -> Result<()> {
+    dotenvy::dotenv().ok();
+
+    let db_url = env::var("DB_URL")?;
+    let db_ns = env::var("DB_NS")?;
+    let db_name = env::var("DB_NAME")?;
+    let db_user = env::var("DB_USER")?;
+    let db_password = env::var("DB_PASSWORD")?;
+
+    let db = any::connect(&db_url).await?;
+
+    db.use_ns(&db_ns).use_db(&db_name).await?;
 
     db.signin(Root {
-        username: "root",
-        password: "root",
+        username: &db_user,
+        password: &db_password,
     })
     .await?;
 
-    db.use_ns("music").use_db("album").await?;
     println!("Connected to DB!");
 
     let result = db
@@ -52,7 +55,6 @@ async fn main() -> surrealdb::Result<()> {
     let routes_api = routes::albums::routes();
 
     let routes_all = Router::new()
-        .merge(routes_hello())
         .merge(web::routes_login::routes())
         .nest("/api", routes_api)
         .with_state(app_state)
@@ -74,30 +76,4 @@ async fn main_response_mapper(res: Response) -> Response {
 
     println!();
     res
-}
-
-fn routes_hello() -> Router<AppState> {
-    Router::new()
-        .route("/hello", get(handler_hello))
-        .route("/hello2/{name}", get(handler_hello2))
-}
-
-#[derive(Debug, Deserialize)]
-struct HelloParams {
-    name: Option<String>,
-}
-
-// `/hello?name=allo`
-async fn handler_hello(Query(params): Query<HelloParams>) -> impl IntoResponse {
-    println!("->> {:<12} - handler-hello - {params:?}", "HANDLER");
-
-    let name = params.name.as_deref().unwrap_or("World!");
-    Html(format!("Bo <strong>{name}</string>"))
-}
-
-// `/hello2/allo`
-async fn handler_hello2(Path(name): Path<String>) -> impl IntoResponse {
-    println!("->> {:<12} - handler-hello - {name:?}", "HANDLER");
-
-    Html(format!("Bo <strong>{name}</string>"))
 }

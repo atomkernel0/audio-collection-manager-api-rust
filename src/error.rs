@@ -14,10 +14,13 @@ pub enum Error {
     AuthFailNoAuthTokenCookie,
     AuthFailTokenWrongFormat,
     AuthFailCtxNotInRequestExt,
+    TokenCreationError,
+    InvalidToken,
 
     // -- Model errors.
     TicketDeleteFailIdNotFound { id: u64 },
 
+    EnvVarError(String),
     DbError(String),
     AlbumNotFound { id: String },
 }
@@ -53,6 +56,10 @@ impl Error {
             | Self::AuthFailTokenWrongFormat
             | Self::AuthFailCtxNotInRequestExt => (StatusCode::FORBIDDEN, ClientError::NO_AUTH),
 
+            Self::TokenCreationError | Self::InvalidToken => {
+                (StatusCode::INTERNAL_SERVER_ERROR, ClientError::TOKEN_ERROR)
+            }
+
             Self::TicketDeleteFailIdNotFound { .. } => {
                 (StatusCode::BAD_REQUEST, ClientError::INVALID_PARAMS)
             }
@@ -61,7 +68,9 @@ impl Error {
                 StatusCode::INTERNAL_SERVER_ERROR,
                 ClientError::SERVICE_ERROR,
             ),
-            Error::AlbumNotFound { id } => (StatusCode::NOT_FOUND, ClientError::RESOURCE_NOT_FOUND),
+            Error::AlbumNotFound { id: _ } => {
+                (StatusCode::NOT_FOUND, ClientError::RESOURCE_NOT_FOUND)
+            }
 
             // Fallback
             _ => (
@@ -80,10 +89,17 @@ pub enum ClientError {
     INVALID_PARAMS,
     SERVICE_ERROR,
     RESOURCE_NOT_FOUND,
+    TOKEN_ERROR,
 }
 
 impl From<surrealdb::Error> for Error {
     fn from(err: surrealdb::Error) -> Self {
         Error::DbError(err.to_string())
+    }
+}
+
+impl From<std::env::VarError> for Error {
+    fn from(err: std::env::VarError) -> Self {
+        Error::EnvVarError(err.to_string())
     }
 }
