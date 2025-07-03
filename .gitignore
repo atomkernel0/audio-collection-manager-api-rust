@@ -5,3 +5,4 @@ Cargo.lock
 create_tables.md
 database_schema.surql
 test_api.http
+.DS_Store
