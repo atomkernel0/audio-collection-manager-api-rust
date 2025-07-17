@@ -1,6 +1,14 @@
-use std::{env, net::SocketAddr};
+use std::{env, net::SocketAddr, time::Instant};
 
-use axum::{middleware, response::Response, Router};
+use axum::{
+    body::Body,
+    http::Request,
+    middleware::{self, Next},
+    response::Response,
+    Router,
+};
+use chrono::Local;
+use tower_http::cors::CorsLayer;
 
 use surrealdb::{
     engine::any::{self, Any},
@@ -8,10 +16,14 @@ use surrealdb::{
     Surreal,
 };
 
+use crate::routes::playlist_routes::PlaylistRoutes;
+
 pub use self::error::{Error, Result};
 
+mod auth;
 mod controllers;
 mod error;
+mod helpers;
 mod models;
 mod routes;
 mod services;
@@ -20,6 +32,7 @@ mod web;
 #[derive(Clone)]
 struct AppState {
     db: Surreal<Any>,
+    rate_limit_cache: moka::future::Cache<String, ()>,
 }
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -50,30 +63,73 @@ async fn main() -> Result<()> {
 
     println!("Database info: {:?}", result);
 
-    let app_state = AppState { db };
+    let app_state = AppState {
+        db,
+        rate_limit_cache: moka::future::Cache::new(1000), // Stocke jusqu'à 1000 entrées
+    };
 
-    let routes_api = routes::albums::routes();
+    let song_routes = routes::song_routes::routes().route_layer(middleware::from_fn_with_state(
+        app_state.clone(),
+        web::mw_rate_limit::rate_limit_middleware,
+    ));
+
+    let routes_api = Router::new()
+        .nest("/albums", routes::albums::routes())
+        .merge(routes::artist::routes())
+        .merge(song_routes)
+        .merge(routes::auth_routes::routes())
+        .merge(routes::user_routes::routes(app_state.clone()))
+        .nest("/favorites", routes::favorites::routes())
+        .nest("/playlist", PlaylistRoutes::routes())
+        .route_layer(middleware::from_fn_with_state(
+            app_state.clone(),
+            web::mw_auth::mw_auth,
+        ));
 
     let routes_all = Router::new()
         .merge(web::routes_login::routes())
         .nest("/api", routes_api)
         .with_state(app_state)
-        .layer(middleware::map_response(main_response_mapper));
+        .layer(middleware::from_fn(track_request_info))
+        .layer(CorsLayer::very_permissive());
 
     let addr = SocketAddr::from(([127, 0, 0, 1], 8080));
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
     println!("->> LISTENING on {addr}\n");
 
-    axum::serve(listener, routes_all.into_make_service())
-        .await
-        .unwrap();
+    axum::serve(
+        listener,
+        routes_all.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .await
+    .unwrap();
 
     Ok(())
 }
 
-async fn main_response_mapper(res: Response) -> Response {
-    println!("->> {:<12} - main_reponse_mapper", "RES_MAPPER");
+async fn track_request_info(req: Request<Body>, next: Next) -> Response {
+    let start = Instant::now();
+    let method = req.method().clone();
+    let uri = req.uri().clone();
+    let path = uri.path().to_string();
 
+    let res = next.run(req).await;
+
+    let duration = start.elapsed();
+    let timestamp = Local::now();
+    let pid = std::process::id();
+    let status = res.status();
+
+    println!(
+        "[{}] DEBUG ({}):\n    method: \"{}\"\n    path: \"{}\"\n    status: {}\n    duration: \"{:?}\"",
+        timestamp.format("%H:%M:%S%.3f"),
+        pid,
+        method,
+        path,
+        status.as_u16(),
+        duration
+    );
     println!();
+
     res
 }

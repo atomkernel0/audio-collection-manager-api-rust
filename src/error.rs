@@ -23,6 +23,20 @@ pub enum Error {
     EnvVarError(String),
     DbError(String),
     AlbumNotFound { id: String },
+    ArtistNotFound { id: String },
+    SongNotFound { id: String },
+    PlaylistNotFound { id: String },
+    UserAlreadyExists { username: String },
+    UserNotFound { username: String },
+    InvalidPassword,
+    InvalidCaptcha,
+
+    // -- Favorite errors.
+    FavoriteAlreadyExists { item_type: String, item_id: String },
+    FavoriteNotFound { item_type: String, item_id: String },
+    SongAlreadyExists { id: String },
+    InvalidFavoriteRequest { reason: String },
+    InvalidInput { reason: String },
 }
 
 impl core::fmt::Display for Error {
@@ -71,6 +85,30 @@ impl Error {
             Error::AlbumNotFound { id: _ } => {
                 (StatusCode::NOT_FOUND, ClientError::RESOURCE_NOT_FOUND)
             }
+            Error::ArtistNotFound { id: _ } => {
+                (StatusCode::NOT_FOUND, ClientError::RESOURCE_NOT_FOUND)
+            }
+            Error::SongNotFound { id: _ } => {
+                (StatusCode::NOT_FOUND, ClientError::RESOURCE_NOT_FOUND)
+            }
+
+            Error::UserAlreadyExists { username: _ } => {
+                (StatusCode::CONFLICT, ClientError::USER_ALREADY_EXISTS)
+            }
+
+            Error::UserNotFound { .. } => (StatusCode::NOT_FOUND, ClientError::RESOURCE_NOT_FOUND),
+            Error::InvalidPassword => (StatusCode::FORBIDDEN, ClientError::INVALID_CREDENTIALS),
+            Error::InvalidCaptcha => (StatusCode::BAD_REQUEST, ClientError::INVALID_CAPTCHA),
+
+            Error::FavoriteAlreadyExists { .. } | Error::SongAlreadyExists { .. } => {
+                (StatusCode::CONFLICT, ClientError::RESOURCE_ALREADY_EXISTS)
+            }
+            Error::FavoriteNotFound { .. } => {
+                (StatusCode::NOT_FOUND, ClientError::RESOURCE_NOT_FOUND)
+            }
+            Error::InvalidFavoriteRequest { .. } | Error::InvalidInput { .. } => {
+                (StatusCode::BAD_REQUEST, ClientError::INVALID_PARAMS)
+            }
 
             // Fallback
             _ => (
@@ -89,7 +127,11 @@ pub enum ClientError {
     INVALID_PARAMS,
     SERVICE_ERROR,
     RESOURCE_NOT_FOUND,
+    RESOURCE_ALREADY_EXISTS,
     TOKEN_ERROR,
+    USER_ALREADY_EXISTS,
+    INVALID_CREDENTIALS,
+    INVALID_CAPTCHA,
 }
 
 impl From<surrealdb::Error> for Error {
@@ -101,5 +143,11 @@ impl From<surrealdb::Error> for Error {
 impl From<std::env::VarError> for Error {
     fn from(err: std::env::VarError) -> Self {
         Error::EnvVarError(err.to_string())
+    }
+}
+
+impl From<bcrypt::BcryptError> for Error {
+    fn from(err: bcrypt::BcryptError) -> Self {
+        Error::DbError(err.to_string())
     }
 }

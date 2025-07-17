@@ -1,7 +1,7 @@
 use crate::{
     controllers::{self},
     error::{Error, Result},
-    models::album::{Album, AlbumWithRelations},
+    models::album::{AlbumWithArtists, AlbumWithRelations},
     AppState,
 };
 use axum::{
@@ -13,8 +13,8 @@ use surrealdb::sql::Thing;
 
 pub fn routes() -> Router<AppState> {
     Router::new()
-        .route("/albums", get(get_albums_handler))
-        .route("/albums/{id}", get(get_album_handler))
+        .route("/", get(get_albums_handler))
+        .route("/{id}", get(get_album_handler))
 }
 
 async fn get_album_handler(
@@ -30,7 +30,7 @@ async fn get_album_handler(
     Ok(Json(album))
 }
 
-async fn get_albums_handler(State(state): State<AppState>) -> Result<Json<Vec<Album>>> {
+async fn get_albums_handler(State(state): State<AppState>) -> Result<Json<Vec<AlbumWithArtists>>> {
     let albums = controllers::album::get_albums(&state.db).await?;
     Ok(Json(albums))
 }

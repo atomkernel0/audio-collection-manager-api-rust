@@ -4,18 +4,27 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-axum = "0.8.1"
+async-trait = "0.1.88"
+axum = { version = "0.8.4", features = ["macros"] }
 tokio = { version = "1.43.0", features = ["full"] }
 serde = { version = "1.0.217", features = ["derive"] }
 serde_json = "1.0.138"
-tower-http = { version = "0.6.2", features = ["fs"] }
 strum_macros = "0.27.1"
 lazy-regex = "3.4.1"
-surrealdb = { version = "2.2.1", features = ["kv-rocksdb", "protocol-ws"] }
+surrealdb = { version = "2.2.1", features = [
+    "kv-rocksdb",
+    "kv-mem",
+    "protocol-ws",
+] }
 jsonwebtoken = "9.3.1"
 chrono = { version = "0.4.41", features = ["serde"] }
 uuid = { version = "1.17.0", features = ["v4"] }
 dotenvy = "0.15.7"
+tower-http = { version = "0.6.6", features = ["fs", "cors"] }
+strum = "0.27.1"
+bcrypt = "0.15.1"
+reqwest = { version = "0.12.20", features = ["json"] }
+moka = { version = "0.12.10", features = ["future"] }
 
 [dev-dependencies]
 anyhow = "1.0.95"

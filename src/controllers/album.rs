@@ -1,7 +1,7 @@
 use surrealdb::{engine::any::Any, sql::Thing, Error, Surreal};
 
 use crate::{
-    models::album::{Album, AlbumWithRelations},
+    models::album::{AlbumWithArtists, AlbumWithRelations},
     services,
 };
 
@@ -12,6 +12,6 @@ pub async fn get_album(
     services::album::get_album_service(db, album_id).await
 }
 
-pub async fn get_albums(db: &Surreal<Any>) -> Result<Vec<Album>, Error> {
+pub async fn get_albums(db: &Surreal<Any>) -> Result<Vec<AlbumWithArtists>, Error> {
     services::album::get_albums_service(db).await
 }

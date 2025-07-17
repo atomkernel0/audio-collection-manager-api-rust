@@ -1,8 +1,12 @@
-use surrealdb::{engine::any::Any, sql::Thing, Error, Surreal};
+use crate::{helpers::album_helpers::album_exists, models::user::Badge, Error};
+use serde::Deserialize;
+use surrealdb::{engine::any::Any, sql::Thing, Surreal};
 
-use crate::models::user::Badge;
-
-async fn add_badge_to_user(db: &Surreal<Any>, user_id: Thing, badge: Badge) -> Result<(), Error> {
+pub async fn add_badge_to_user(
+    db: &Surreal<Any>,
+    user_id: Thing,
+    badge: Badge,
+) -> Result<(), Error> {
     let badge_str = badge.to_string();
 
     let sql = "UPDATE $user_id SET badges += $badge";
