@@ -1,11 +1,12 @@
+use crate::{controllers::auth_controller::AuthController, AppState};
 use axum::{routing::post, Router};
 
-use crate::controllers::auth_controller::{login_handler, register_handler};
+pub struct AuthRoutes;
 
-use crate::AppState;
-
-pub fn routes() -> Router<AppState> {
-    Router::new()
-        .route("/auth/register", post(register_handler))
-        .route("/auth/login", post(login_handler))
+impl AuthRoutes {
+    pub fn routes() -> Router<AppState> {
+        Router::new()
+            .route("/register", post(AuthController::register_user))
+            .route("/login", post(AuthController::login_user))
+    }
 }

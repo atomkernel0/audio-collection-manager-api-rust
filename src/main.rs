@@ -1,22 +1,25 @@
-use std::{env, net::SocketAddr, time::Instant};
+use std::{env, net::SocketAddr};
 
 use axum::{
-    body::Body,
-    http::Request,
-    middleware::{self, Next},
-    response::Response,
+    middleware::{self},
     Router,
 };
-use chrono::Local;
-use tower_http::cors::CorsLayer;
-
 use surrealdb::{
     engine::any::{self, Any},
     opt::auth::Root,
     Surreal,
 };
 
-use crate::routes::playlist_routes::PlaylistRoutes;
+use tower_http::{cors::CorsLayer, trace::TraceLayer};
+
+use crate::{
+    auth::token_service::AuthConfig,
+    routes::{
+        album_routes::AlbumRoutes, artist_routes::ArtistRoutes, auth_routes::AuthRoutes,
+        favorites::FavoriteRoutes, playlist_routes::PlaylistRoutes, search_routes::SearchRoutes,
+        song_routes::SongRoutes, user_routes::UserRoutes,
+    },
+};
 
 pub use self::error::{Error, Result};
 
@@ -32,11 +35,19 @@ mod web;
 #[derive(Clone)]
 struct AppState {
     db: Surreal<Any>,
-    rate_limit_cache: moka::future::Cache<String, ()>,
+    #[allow(dead_code)]
+    rate_limit_cache: moka::future::Cache<String, ()>, //TODO: implement feature
+    auth_config: AuthConfig,
 }
+
 #[tokio::main]
 async fn main() -> Result<()> {
     dotenvy::dotenv().ok();
+
+    tracing_subscriber::fmt()
+        .with_target(false)
+        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+        .init();
 
     let db_url = env::var("DB_URL")?;
     let db_ns = env::var("DB_NS")?;
@@ -56,30 +67,22 @@ async fn main() -> Result<()> {
 
     println!("Connected to DB!");
 
-    let result = db
-        .query("INFO FOR DB")
-        .await
-        .map_err(|e| Error::DbError(e.to_string()));
-
-    println!("Database info: {:?}", result);
+    let auth_config = AuthConfig::from_env().expect("Failed to load auth configuration");
 
     let app_state = AppState {
         db,
-        rate_limit_cache: moka::future::Cache::new(1000), // Stocke jusqu'à 1000 entrées
+        rate_limit_cache: moka::future::Cache::new(1000),
+        auth_config: auth_config.clone(),
     };
 
-    let song_routes = routes::song_routes::routes().route_layer(middleware::from_fn_with_state(
-        app_state.clone(),
-        web::mw_rate_limit::rate_limit_middleware,
-    ));
-
     let routes_api = Router::new()
-        .nest("/albums", routes::albums::routes())
-        .merge(routes::artist::routes())
-        .merge(song_routes)
-        .merge(routes::auth_routes::routes())
-        .merge(routes::user_routes::routes(app_state.clone()))
-        .nest("/favorites", routes::favorites::routes())
+        .nest("/auth", AuthRoutes::routes())
+        .nest("/albums", AlbumRoutes::routes())
+        .nest("/artists", ArtistRoutes::routes())
+        .nest("/song", SongRoutes::routes())
+        .nest("/user", UserRoutes::routes())
+        .nest("/favorites", FavoriteRoutes::routes())
+        .nest("/search", SearchRoutes::routes())
         .nest("/playlist", PlaylistRoutes::routes())
         .route_layer(middleware::from_fn_with_state(
             app_state.clone(),
@@ -87,15 +90,14 @@ async fn main() -> Result<()> {
         ));
 
     let routes_all = Router::new()
-        .merge(web::routes_login::routes())
         .nest("/api", routes_api)
         .with_state(app_state)
-        .layer(middleware::from_fn(track_request_info))
+        .layer(TraceLayer::new_for_http())
         .layer(CorsLayer::very_permissive());
 
     let addr = SocketAddr::from(([127, 0, 0, 1], 8080));
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
-    println!("->> LISTENING on {addr}\n");
+    println!("--> LISTENING on {addr}\n");
 
     axum::serve(
         listener,
@@ -105,31 +107,4 @@ async fn main() -> Result<()> {
     .unwrap();
 
     Ok(())
-}
-
-async fn track_request_info(req: Request<Body>, next: Next) -> Response {
-    let start = Instant::now();
-    let method = req.method().clone();
-    let uri = req.uri().clone();
-    let path = uri.path().to_string();
-
-    let res = next.run(req).await;
-
-    let duration = start.elapsed();
-    let timestamp = Local::now();
-    let pid = std::process::id();
-    let status = res.status();
-
-    println!(
-        "[{}] DEBUG ({}):\n    method: \"{}\"\n    path: \"{}\"\n    status: {}\n    duration: \"{:?}\"",
-        timestamp.format("%H:%M:%S%.3f"),
-        pid,
-        method,
-        path,
-        status.as_u16(),
-        duration
-    );
-    println!();
-
-    res
 }

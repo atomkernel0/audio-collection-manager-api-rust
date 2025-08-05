@@ -2,11 +2,30 @@ use serde::{Deserialize, Serialize};
 use surrealdb::{sql::Thing, Datetime};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct User {
+pub struct UserRecord {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<Thing>,
     pub username: String,
     pub password: String,
+    pub created_at: Datetime,
+    pub listen_count: u32,
+    pub total_listening_time: u64,
+    pub favorite_count: u16,
+
+    pub listening_streak: u16,
+    pub badges: Vec<Badge>,
+
+    //NOTE: idk if I will implement the following
+    pub level: u16,
+    pub experience_points: u32,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct UserProfile {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<Thing>,
+    pub username: String,
+    // no password
     pub created_at: Datetime,
     pub listen_count: u32,
     pub total_listening_time: u64,

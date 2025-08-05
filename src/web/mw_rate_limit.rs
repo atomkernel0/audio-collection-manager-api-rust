@@ -6,7 +6,6 @@ use axum::{
     http::{Request, StatusCode},
     middleware::Next,
     response::Response,
-    Extension,
 };
 
 use crate::{web::mw_auth::Ctx, AppState};

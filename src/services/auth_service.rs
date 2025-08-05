@@ -1,48 +1,84 @@
 use crate::{
-    auth::{jwt_service, password_service},
+    auth::{
+        password_service,
+        token_service::{AuthConfig, TokenService},
+    },
     error::{Error, Result},
-    models::user::User,
+    helpers::thing_helpers::{parse_id_part, thing_to_string},
+    models::user::UserRecord,
 };
 use chrono::Utc;
 use surrealdb::{engine::any::Any, Surreal};
 
-pub async fn register_user(db: &Surreal<Any>, username: String, password: String) -> Result<User> {
-    let sql = "SELECT * FROM user WHERE username = $username";
-    let mut result = db.query(sql).bind(("username", username.clone())).await?;
-    let user: Option<User> = result.take(0)?;
-    if user.is_none() {
-        let hashed_password =
-            password_service::hash_password(&password).map_err(|_| Error::TokenCreationError)?;
-        let new_user = User {
-            id: None,
-            username: username.clone(),
-            password: hashed_password,
-            created_at: Utc::now().into(),
-            listen_count: 0,
-            total_listening_time: 0,
-            favorite_count: 0,
-            listening_streak: 0,
-            badges: vec![],
-            level: 1,
-            experience_points: 0,
-        };
-        db.create("user")
-            .content(new_user)
-            .await?
-            .ok_or(Error::DbError("Could not create user".into()))
-    } else {
-        Err(Error::UserAlreadyExists { username })
-    }
-}
+pub struct AuthService;
 
-pub async fn login_user(db: &Surreal<Any>, username: String, password: String) -> Result<String> {
-    let sql = "SELECT * FROM user WHERE username = $username";
-    let mut result = db.query(sql).bind(("username", username.clone())).await?;
-    let user: Option<User> = result.take(0)?;
-    let user = user.ok_or_else(|| Error::UserNotFound { username })?;
-    if !password_service::verify_password(&password, &user.password)? {
-        return Err(Error::InvalidPassword);
+impl AuthService {
+    pub async fn register_user(
+        db: &Surreal<Any>,
+        username: String,
+        password: String,
+    ) -> Result<UserRecord> {
+        if username.to_lowercase() == "me" {
+            return Err(Error::ReservedUsername { username });
+        }
+
+        //TODO: pas de pseudo de plus de 30 chars, pas vide, pas d'espaces
+
+        let sql = "SELECT * FROM user WHERE username = $username";
+        let mut result = db.query(sql).bind(("username", username.clone())).await?;
+        let user: Option<UserRecord> = result.take(0)?;
+        if user.is_none() {
+            let hashed_password = password_service::hash_password(&password)?;
+            let new_user = UserRecord {
+                id: None,
+                username: username.clone(),
+                password: hashed_password,
+                created_at: Utc::now().into(),
+                listen_count: 0,
+                total_listening_time: 0,
+                favorite_count: 0,
+                listening_streak: 0,
+                badges: vec![],
+                level: 1,
+                experience_points: 0,
+            };
+            db.create("user")
+                .content(new_user)
+                .await?
+                .ok_or(Error::DbError("Could not create user".into()))
+        } else {
+            Err(Error::UserAlreadyExists { username })
+        }
     }
-    let token = jwt_service::create_token(&user.id.clone().unwrap().to_string())?;
-    Ok(token)
+
+    pub async fn login_user(
+        db: &Surreal<Any>,
+        config: &AuthConfig,
+        username: String,
+        password: String,
+    ) -> Result<String> {
+        let sql = "SELECT * FROM user WHERE username = $username";
+        let result: Option<UserRecord> = db
+            .query(sql)
+            .bind(("username", username.clone()))
+            .await?
+            .take(0)?;
+
+        let user: UserRecord = result.ok_or_else(|| Error::UserNotFound {
+            username: username.to_owned(),
+        })?;
+
+        if !password_service::verify_password(&password, &user.password)? {
+            return Err(Error::InvalidPassword);
+        }
+
+        let token = match &user.id {
+            Some(id) => {
+                TokenService::create_token(parse_id_part(&thing_to_string(id)).to_string(), config)?
+            }
+            None => return Err(Error::LoginFail),
+        };
+
+        Ok(token)
+    }
 }

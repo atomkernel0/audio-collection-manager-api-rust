@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use surrealdb::{sql::Duration, sql::Thing, Datetime};
 
-use crate::models::{song::Song, user::User};
+use crate::models::{song::SongWithRelations, user::UserRecord};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Playlist {
@@ -39,8 +39,8 @@ pub struct PlaylistWithSongs {
     pub total_duration: Duration,
     pub total_listens: u32,
     pub total_likes: u32,
-    pub created_by: User,
-    pub songs: Vec<Song>,
+    pub created_by: UserRecord,
+    pub songs: Option<Vec<SongWithRelations>>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

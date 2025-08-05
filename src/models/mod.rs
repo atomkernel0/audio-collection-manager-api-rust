@@ -5,4 +5,6 @@ pub mod playlist;
 pub mod song;
 pub mod user;
 
+pub mod pagination;
+
 pub mod music_genre;

@@ -16,8 +16,12 @@ pub struct Artist {
     pub genres: Vec<MusicGenre>,
     pub country_code: String,
     pub artist_image: Option<String>,
+    #[serde(default)]
     pub albums_count: u16,
+    #[serde(default)]
     pub songs_count: u16,
+    #[serde(default)]
+    pub total_likes: u32,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -28,8 +32,12 @@ pub struct ArtistWithAlbums {
     pub genres: Vec<MusicGenre>,
     pub country_code: String,
     pub artist_image: Option<String>,
+    #[serde(default)]
     pub albums_count: u16,
+    #[serde(default)]
     pub songs_count: u16,
+    #[serde(default)]
+    pub total_likes: u32,
     pub albums: Vec<Album>,
 }
 
@@ -41,8 +49,12 @@ pub struct ArtistWithAlbumsAndTopSongs {
     pub genres: Vec<MusicGenre>,
     pub country_code: String,
     pub artist_image: Option<String>,
+    #[serde(default)]
     pub albums_count: u16,
+    #[serde(default)]
     pub songs_count: u16,
+    #[serde(default)]
+    pub total_likes: u32,
     pub albums: Vec<AlbumWithArtists>,
     pub top_songs: Vec<Song>,
 }

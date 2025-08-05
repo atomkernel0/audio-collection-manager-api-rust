@@ -1,5 +1,6 @@
 use chrono::Utc;
-use surrealdb::sql::{Thing, Value};
+use serde::{Deserialize, Serialize};
+use surrealdb::sql::Thing;
 use surrealdb::{engine::any::Any, Surreal};
 
 use crate::helpers::song_helpers::song_exists;
@@ -9,6 +10,22 @@ use crate::{
     models::playlist::{CreatePlaylistRequest, Playlist},
     Error,
 };
+
+#[derive(Serialize, Deserialize)]
+struct UserLikesPlaylist {
+    id: Thing,
+    #[serde(rename = "in")]
+    user_id: Thing,
+    #[serde(rename = "out")]
+    playlist_id: Thing,
+    created_at: surrealdb::sql::Datetime,
+    tags: Vec<String>,
+    notes: Option<String>,
+    user_rating: Option<i32>,
+    sort_order: i64,
+    is_favorite: bool,
+    last_accessed: Option<surrealdb::sql::Datetime>,
+}
 
 /*
     implémentation Angular:
@@ -76,6 +93,7 @@ impl PlaylistService {
 
         Ok(result.pop().map(|c| c.count).unwrap_or(0) > 0)
     }
+
     /// Crée une nouvelle playlist pour un utilisateur
     pub async fn create_playlist(
         db: &Surreal<Any>,
@@ -147,7 +165,6 @@ impl PlaylistService {
         song_id: &str,
         playlist_id: &str,
     ) -> Result<(), Error> {
-        // Validation des paramètres d'entrée
         if user_id.trim().is_empty() {
             return Err(Error::InvalidInput {
                 reason: "L'ID utilisateur ne peut pas être vide".to_string(),
@@ -164,10 +181,10 @@ impl PlaylistService {
             });
         }
 
-        // Vérifier que la playlist appartient à l'utilisateur
+        println!("working software");
+
         let playlist = Self::validate_playlist_ownership(db, playlist_id, user_id).await?;
 
-        // Vérification optionnelle : limite du nombre de chansons par playlist
         if playlist.songs_count >= 1000 {
             return Err(Error::InvalidInput {
                 reason: format!(
@@ -187,17 +204,15 @@ impl PlaylistService {
 
         if !song_check {
             return Err(Error::SongNotFound {
-                id: format!("Chanson '{}' non trouvée", song_id),
+                id: song_id.to_string(),
             });
         }
 
         // Vérifier que la chanson n'est pas déjà dans la playlist
         if Self::song_exists_in_playlist(db, playlist_id, song_id).await? {
-            return Err(Error::SongAlreadyExists {
-                id: format!(
-                    "La chanson '{}' est déjà dans la playlist '{}'",
-                    song_id, playlist_id
-                ),
+            return Err(Error::SongAlreadyExistsInPlaylist {
+                song_id: song_id.to_string(),
+                playlist_id: playlist_id.to_string(),
             });
         }
 
@@ -205,8 +220,6 @@ impl PlaylistService {
         let song_thing = create_song_thing(song_id);
         let playlist_thing = create_playlist_thing(playlist_id);
 
-        // Utiliser RELATE pour créer la relation (syntaxe SurrealDB recommandée)
-        // Le résultat de RELATE est un enregistrement de relation, pas besoin de le désérialiser
         let _: surrealdb::Response = db
             .query("RELATE $playlist->playlist_contains_song->$song SET added_at = $added_at, added_by = $added_by")
             .bind(("playlist", playlist_thing))
@@ -259,65 +272,36 @@ impl PlaylistService {
     ) -> Result<PlaylistWithSongs, Error> {
         let playlist_thing = create_playlist_thing(playlist_id);
 
-        let mut playlists: Vec<Playlist> = db
+        let mut playlists: Vec<PlaylistWithSongs> = db
             .query(
                 r#"
-            SELECT *
-            FROM playlist
-            WHERE id = $playlist
-        "#,
-            )
-            .bind(("playlist", playlist_thing.clone()))
-            .await?
-            .take(0)?;
-
-        let playlist = playlists.pop().ok_or_else(|| Error::PlaylistNotFound {
-            id: "Playlist non trouvée".to_string(),
-        })?;
-
-        // Récupérer l'utilisateur créateur
-        let mut users: Vec<crate::models::user::User> = db
-            .query("SELECT * FROM user WHERE id = $user_id")
-            .bind(("user_id", playlist.created_by.clone()))
-            .await?
-            .take(0)?;
-
-        let created_by = users.pop().ok_or_else(|| Error::DbError {
-            0: "Utilisateur créateur non trouvé".to_string(),
-        })?;
-
-        // Récupérer les chansons de la playlist
-        let songs: Vec<crate::models::song::Song> = db
-            .query(
-                r#"
-            SELECT song.*
-            FROM playlist_contains_song
-            WHERE in = $playlist
-            ORDER BY added_at ASC
-            FETCH out
-        "#,
+                SELECT *,
+                    (SELECT
+                        out.id as id,
+                        out.title as title,
+                        out.duration as duration,
+                        out.file_url as file_url,
+                        out.song_index as song_index,
+                        out.tempo as tempo,
+                        out.total_listens as total_listens,
+                        out.total_user_listens as total_user_listens,
+                        out.total_likes as total_likes,
+                        added_at,
+                        (out<-artist_performs_song<-artist) AS artists,
+                        (out<-album_contains_song<-album)[0] AS album
+                    FROM playlist_contains_song WHERE in = $parent.id ORDER BY added_at ASC) AS songs
+                FROM playlist
+                WHERE id = $playlist
+                FETCH created_by, songs, songs.artists, songs.album
+            "#,
             )
             .bind(("playlist", playlist_thing))
             .await?
             .take(0)?;
 
-        let playlist_with_songs = PlaylistWithSongs {
-            id: playlist.id,
-            name: playlist.name,
-            cover_url: playlist.cover_url,
-            dominant_color: playlist.dominant_color,
-            is_public: playlist.is_public,
-            created_at: playlist.created_at,
-            updated_at: playlist.updated_at,
-            songs_count: playlist.songs_count,
-            total_duration: playlist.total_duration,
-            total_listens: playlist.total_listens,
-            total_likes: playlist.total_likes,
-            created_by,
-            songs,
-        };
-
-        Ok(playlist_with_songs)
+        playlists.pop().ok_or_else(|| Error::PlaylistNotFound {
+            id: format!("Playlist '{}' non trouvée", playlist_id),
+        })
     }
 
     /// Supprime une chanson d'une playlist
@@ -411,14 +395,15 @@ impl PlaylistService {
 
         let songs_count = count_results.pop().map(|r| r.count).unwrap_or(0);
 
-        // Calculer la durée totale (optionnelle car peut être NULL si aucune chanson)
         #[derive(serde::Deserialize)]
         struct DurationResult {
-            total: Option<surrealdb::sql::Duration>,
+            total: surrealdb::sql::Duration,
         }
 
+        let query = "SELECT (IF count(out.duration) > 0 THEN math::sum(out.duration) ELSE 0s END) AS total FROM playlist_contains_song WHERE in = $playlist GROUP ALL";
+
         let mut duration_results: Vec<DurationResult> = db
-            .query("SELECT math::sum(out.duration) AS total FROM playlist_contains_song WHERE in = $playlist GROUP ALL")
+            .query(query)
             .bind(("playlist", playlist_thing.clone()))
             .await
             .map_err(|e| Error::DbError(format!("Erreur lors du calcul de la durée: {}", e)))?
@@ -427,7 +412,7 @@ impl PlaylistService {
 
         let total_duration = duration_results
             .pop()
-            .and_then(|r| r.total)
+            .map(|r| r.total)
             .unwrap_or(surrealdb::sql::Duration::from_secs(0));
 
         // Mettre à jour la playlist avec les nouvelles statistiques
@@ -470,29 +455,39 @@ impl PlaylistService {
         let playlist_thing = create_playlist_thing(playlist_id);
 
         // Vérifier si l'utilisateur a déjà liké la playlist
-        let existing: Option<Value> = db
-            .query("SELECT * FROM user_likes_playlist WHERE in = $user AND out = $playlist")
+        let sql_check =
+            "SELECT * FROM user_likes_playlist WHERE in = $user AND out = $playlist LIMIT 1";
+
+        let mut response = db
+            .query(sql_check)
             .bind(("user", user_thing.clone()))
             .bind(("playlist", playlist_thing.clone()))
-            .await?
-            .take(0)?;
+            .await?;
 
-        if existing.is_some() {
-            // Unlike
-            let _ = db
-                .query("DELETE FROM user_likes_playlist WHERE in = $user AND out = $playlist")
+        let result: Vec<UserLikesPlaylist> = response.take(0)?;
+        let exists = !result.is_empty();
+
+        if exists {
+            // Unlike - supprimer le like existant
+            let sql_delete = "DELETE user_likes_playlist WHERE in = $user AND out = $playlist";
+            let _response = db
+                .query(sql_delete)
                 .bind(("user", user_thing))
-                .bind(("playlist", playlist_thing))
+                .bind(("playlist", playlist_thing.clone()))
                 .await?;
+
+            // Pas besoin de traiter le résultat de la suppression
             Ok(false)
         } else {
-            // Like
-            let _ = db
-                .query("RELATE $user->user_likes_playlist->$playlist SET created_at = $created_at")
+            // Like - créer un nouveau like
+            let sql_create =
+                "RELATE $user->user_likes_playlist->$playlist SET created_at = time::now()";
+            db.query(sql_create)
                 .bind(("user", user_thing))
-                .bind(("playlist", playlist_thing))
-                .bind(("created_at", surrealdb::sql::Datetime::from(Utc::now())))
-                .await?;
+                .bind(("playlist", playlist_thing.clone()))
+                .await?
+                .check()?;
+
             Ok(true)
         }
     }

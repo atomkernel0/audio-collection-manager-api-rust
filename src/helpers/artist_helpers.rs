@@ -1,12 +1,12 @@
 use surrealdb::engine::any::Any;
-use surrealdb::sql::Thing;
 use surrealdb::{Error, Surreal};
 
+use crate::helpers::thing_helpers::create_artist_thing;
 use crate::models::artist::Artist;
 
-/// Vérifie si un artiste existe dans la base de données
+/// Check if an artist exists in the database
 pub async fn artist_exists(db: &Surreal<Any>, artist_id: &str) -> Result<bool, Error> {
-    let artist_thing = Thing::from(("artist", artist_id));
+    let artist_thing = create_artist_thing(artist_id);
     let sql_query = "SELECT * FROM $artist_id;";
     let mut response = db
         .query(sql_query)
@@ -35,6 +35,7 @@ mod tests {
             artist_image: Some("https://example.com/artist.jpg".to_string()),
             albums_count: 3,
             songs_count: 10,
+            total_likes: 0,
         };
 
         let created_artist: Artist = db

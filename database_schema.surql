@@ -115,39 +115,19 @@ DEFINE FIELD created_at ON TABLE user_likes_playlist TYPE datetime DEFAULT time:
 -- #################################################
 
 -- Extension des métadonnées pour user_likes_album
-DEFINE FIELD tags ON TABLE user_likes_album TYPE array<string> DEFAULT [];
-DEFINE FIELD notes ON TABLE user_likes_album TYPE option<string>;
-DEFINE FIELD user_rating ON TABLE user_likes_album TYPE option<int>
-    ASSERT $value == NONE OR ($value >= 1 AND $value <= 5);
 DEFINE FIELD sort_order ON TABLE user_likes_album TYPE int DEFAULT 0;
-DEFINE FIELD is_favorite ON TABLE user_likes_album TYPE bool DEFAULT true;
 DEFINE FIELD last_accessed ON TABLE user_likes_album TYPE option<datetime>;
 
 -- Extension des métadonnées pour user_likes_song
-DEFINE FIELD tags ON TABLE user_likes_song TYPE array<string> DEFAULT [];
-DEFINE FIELD notes ON TABLE user_likes_song TYPE option<string>;
-DEFINE FIELD user_rating ON TABLE user_likes_song TYPE option<int>
-    ASSERT $value == NONE OR ($value >= 1 AND $value <= 5);
 DEFINE FIELD sort_order ON TABLE user_likes_song TYPE int DEFAULT 0;
-DEFINE FIELD is_favorite ON TABLE user_likes_song TYPE bool DEFAULT false;
 DEFINE FIELD last_accessed ON TABLE user_likes_song TYPE option<datetime>;
 
 -- Extension des métadonnées pour user_likes_artist
-DEFINE FIELD tags ON TABLE user_likes_artist TYPE array<string> DEFAULT [];
-DEFINE FIELD notes ON TABLE user_likes_artist TYPE option<string>;
-DEFINE FIELD user_rating ON TABLE user_likes_artist TYPE option<int>
-    ASSERT $value == NONE OR ($value >= 1 AND $value <= 5);
 DEFINE FIELD sort_order ON TABLE user_likes_artist TYPE int DEFAULT 0;
-DEFINE FIELD is_favorite ON TABLE user_likes_artist TYPE bool DEFAULT false;
 DEFINE FIELD last_accessed ON TABLE user_likes_artist TYPE option<datetime>;
 
 -- Extension des métadonnées pour user_likes_playlist
-DEFINE FIELD tags ON TABLE user_likes_playlist TYPE array<string> DEFAULT [];
-DEFINE FIELD notes ON TABLE user_likes_playlist TYPE option<string>;
-DEFINE FIELD user_rating ON TABLE user_likes_playlist TYPE option<int>
-    ASSERT $value == NONE OR ($value >= 1 AND $value <= 5);
 DEFINE FIELD sort_order ON TABLE user_likes_playlist TYPE int DEFAULT 0;
-DEFINE FIELD is_favorite ON TABLE user_likes_playlist TYPE bool DEFAULT false;
 DEFINE FIELD last_accessed ON TABLE user_likes_playlist TYPE option<datetime>;
 
 
@@ -172,26 +152,6 @@ DEFINE FIELD total_listens ON TABLE playlist TYPE int DEFAULT 0;
 DEFINE FIELD total_likes ON TABLE playlist TYPE int DEFAULT 0;
 
 -- #################
--- # TABLE user_favorites_preferences
--- #################
-DEFINE TABLE user_favorites_preferences SCHEMAFULL;
-DEFINE FIELD user_id ON TABLE user_favorites_preferences TYPE record<user>;
-DEFINE FIELD default_sort_by ON TABLE user_favorites_preferences TYPE string DEFAULT 'created_at'
-    ASSERT $value IN ['created_at', 'user_rating', 'sort_order', 'last_accessed', 'title'];
-DEFINE FIELD default_sort_order ON TABLE user_favorites_preferences TYPE string DEFAULT 'DESC'
-    ASSERT $value IN ['ASC', 'DESC'];
-DEFINE FIELD items_per_page ON TABLE user_favorites_preferences TYPE int DEFAULT 20;
-DEFINE FIELD show_ratings ON TABLE user_favorites_preferences TYPE bool DEFAULT true;
-DEFINE FIELD show_notes ON TABLE user_favorites_preferences TYPE bool DEFAULT true;
-DEFINE FIELD show_tags ON TABLE user_favorites_preferences TYPE bool DEFAULT true;
-DEFINE FIELD auto_add_to_favorites ON TABLE user_favorites_preferences TYPE bool DEFAULT false;
-DEFINE FIELD export_format ON TABLE user_favorites_preferences TYPE string DEFAULT 'json'
-    ASSERT $value IN ['json', 'csv', 'xml'];
-DEFINE FIELD created_at ON TABLE user_favorites_preferences TYPE datetime DEFAULT time::now();
-DEFINE FIELD updated_at ON TABLE user_favorites_preferences TYPE datetime DEFAULT time::now();
-
-
--- #################
 -- # INDEX pour les favoris
 -- #################
 
@@ -205,30 +165,9 @@ DEFINE INDEX idx_user_likes_album_user_sort ON user_likes_album FIELDS in, sort_
 DEFINE INDEX idx_user_likes_song_user_sort ON user_likes_song FIELDS in, sort_order;
 DEFINE INDEX idx_user_likes_artist_user_sort ON user_likes_artist FIELDS in, sort_order;
 
--- Index pour les favoris marqués
-DEFINE INDEX idx_user_likes_album_favorites ON user_likes_album FIELDS in, is_favorite;
-DEFINE INDEX idx_user_likes_song_favorites ON user_likes_song FIELDS in, is_favorite;
-DEFINE INDEX idx_user_likes_artist_favorites ON user_likes_artist FIELDS in, is_favorite;
-
--- Index pour les recherches par tags
-DEFINE INDEX idx_user_likes_album_tags ON user_likes_album FIELDS in, tags;
-DEFINE INDEX idx_user_likes_song_tags ON user_likes_song FIELDS in, tags;
-DEFINE INDEX idx_user_likes_artist_tags ON user_likes_artist FIELDS in, tags;
-
--- Index unique pour les préférences utilisateur
-DEFINE INDEX idx_user_favorites_preferences_unique ON user_favorites_preferences FIELDS user_id UNIQUE;
-
--- Index pour les requêtes de rating
-DEFINE INDEX idx_user_likes_album_rating ON user_likes_album FIELDS in, user_rating;
-DEFINE INDEX idx_user_likes_song_rating ON user_likes_song FIELDS in, user_rating;
-DEFINE INDEX idx_user_likes_artist_rating ON user_likes_artist FIELDS in, user_rating;
-
 -- Index pour les playlists
 DEFINE INDEX idx_user_likes_playlist_user_created ON user_likes_playlist FIELDS in, created_at;
 DEFINE INDEX idx_user_likes_playlist_user_sort ON user_likes_playlist FIELDS in, sort_order;
-DEFINE INDEX idx_user_likes_playlist_favorites ON user_likes_playlist FIELDS in, is_favorite;
-DEFINE INDEX idx_user_likes_playlist_tags ON user_likes_playlist FIELDS in, tags;
-DEFINE INDEX idx_user_likes_playlist_rating ON user_likes_playlist FIELDS in, user_rating;
 DEFINE INDEX idx_user_creates_playlist_user ON user_creates_playlist FIELDS in;
 DEFINE INDEX idx_playlist_contains_song_playlist ON playlist_contains_song FIELDS in;
 DEFINE INDEX idx_playlist_contains_song_song ON playlist_contains_song FIELDS out;
@@ -241,7 +180,7 @@ DEFINE INDEX idx_playlist_created_by ON playlist FIELDS created_by;
 DEFINE EVENT update_album_aggregates ON TABLE album_contains_song WHEN $event = "CREATE" OR $event = "DELETE" THEN {
     LET $album_id = if $event = "CREATE" { $after.in } else { $before.in };
     
-    LET $total_tracks = (SELECT count() FROM album_contains_song WHERE in = $album_id GROUP ALL).count;
+    LET $total_tracks = (SELECT count() FROM album_contains_song WHERE in = $album_id GROUP ALL)[0].count;
     UPDATE $album_id SET total_tracks = $total_tracks;
 
     LET $total_duration = (SELECT math::sum(out.duration) AS total FROM album_contains_song WHERE in = $album_id GROUP ALL).total OR 0s;
@@ -256,7 +195,7 @@ DEFINE EVENT update_album_aggregates ON TABLE album_contains_song WHEN $event = 
 DEFINE EVENT update_artist_likes_count ON TABLE user_likes_artist WHEN $event = "CREATE" OR $event = "DELETE" THEN {
     LET $artist_id = if $event = "CREATE" { $after.out } else { $before.out };
 
-    LET $total_likes = (SELECT count() FROM user_likes_artist WHERE out = $artist_id GROUP ALL).count OR 0;
+    LET $total_likes = (SELECT count() FROM user_likes_artist WHERE out = $artist_id GROUP ALL)[0].count OR 0;
     UPDATE $artist_id SET total_likes = $total_likes;
 };
 
@@ -264,9 +203,9 @@ DEFINE EVENT update_artist_likes_count ON TABLE user_likes_artist WHEN $event = 
 DEFINE EVENT update_user_favorite_count ON TABLE user_likes_album WHEN $event = "CREATE" OR $event = "DELETE" THEN {
     LET $user_id = if $event = "CREATE" { $after.in } else { $before.in };
 
-    LET $album_favorites = (SELECT count() FROM user_likes_album WHERE in = $user_id GROUP ALL).count OR 0;
-    LET $song_favorites = (SELECT count() FROM user_likes_song WHERE in = $user_id GROUP ALL).count OR 0;
-    LET $artist_favorites = (SELECT count() FROM user_likes_artist WHERE in = $user_id GROUP ALL).count OR 0;
+    LET $album_favorites = (SELECT count() FROM user_likes_album WHERE in = $user_id GROUP ALL)[0].count OR 0;
+    LET $song_favorites = (SELECT count() FROM user_likes_song WHERE in = $user_id GROUP ALL)[0].count OR 0;
+    LET $artist_favorites = (SELECT count() FROM user_likes_artist WHERE in = $user_id GROUP ALL)[0].count OR 0;
 
     UPDATE $user_id SET favorite_count = $album_favorites + $song_favorites + $artist_favorites;
 };
@@ -275,9 +214,9 @@ DEFINE EVENT update_user_favorite_count ON TABLE user_likes_album WHEN $event = 
 DEFINE EVENT update_user_favorite_count_song ON TABLE user_likes_song WHEN $event = "CREATE" OR $event = "DELETE" THEN {
     LET $user_id = if $event = "CREATE" { $after.in } else { $before.in };
 
-    LET $album_favorites = (SELECT count() FROM user_likes_album WHERE in = $user_id GROUP ALL).count OR 0;
-    LET $song_favorites = (SELECT count() FROM user_likes_song WHERE in = $user_id GROUP ALL).count OR 0;
-    LET $artist_favorites = (SELECT count() FROM user_likes_artist WHERE in = $user_id GROUP ALL).count OR 0;
+    LET $album_favorites = (SELECT count() FROM user_likes_album WHERE in = $user_id GROUP ALL)[0].count OR 0;
+    LET $song_favorites = (SELECT count() FROM user_likes_song WHERE in = $user_id GROUP ALL)[0].count OR 0;
+    LET $artist_favorites = (SELECT count() FROM user_likes_artist WHERE in = $user_id GROUP ALL)[0].count OR 0;
 
     UPDATE $user_id SET favorite_count = $album_favorites + $song_favorites + $artist_favorites;
 };
@@ -286,10 +225,10 @@ DEFINE EVENT update_user_favorite_count_song ON TABLE user_likes_song WHEN $even
 DEFINE EVENT update_user_favorite_count_artist ON TABLE user_likes_artist WHEN $event = "CREATE" OR $event = "DELETE" THEN {
     LET $user_id = if $event = "CREATE" { $after.in } else { $before.in };
 
-    LET $album_favorites = (SELECT count() FROM user_likes_album WHERE in = $user_id GROUP ALL).count OR 0;
-    LET $song_favorites = (SELECT count() FROM user_likes_song WHERE in = $user_id GROUP ALL).count OR 0;
-    LET $artist_favorites = (SELECT count() FROM user_likes_artist WHERE in = $user_id GROUP ALL).count OR 0;
-    LET $playlist_favorites = (SELECT count() FROM user_likes_playlist WHERE in = $user_id GROUP ALL).count OR 0;
+    LET $album_favorites = (SELECT count() FROM user_likes_album WHERE in = $user_id GROUP ALL)[0].count OR 0;
+    LET $song_favorites = (SELECT count() FROM user_likes_song WHERE in = $user_id GROUP ALL)[0].count OR 0;
+    LET $artist_favorites = (SELECT count() FROM user_likes_artist WHERE in = $user_id GROUP ALL)[0].count OR 0;
+    LET $playlist_favorites = (SELECT count() FROM user_likes_playlist WHERE in = $user_id GROUP ALL)[0].count OR 0;
 
     UPDATE $user_id SET favorite_count = $album_favorites + $song_favorites + $artist_favorites + $playlist_favorites;
 };
@@ -298,10 +237,10 @@ DEFINE EVENT update_user_favorite_count_artist ON TABLE user_likes_artist WHEN $
 DEFINE EVENT update_user_favorite_count_playlist ON TABLE user_likes_playlist WHEN $event = "CREATE" OR $event = "DELETE" THEN {
     LET $user_id = if $event = "CREATE" { $after.in } else { $before.in };
 
-    LET $album_favorites = (SELECT count() FROM user_likes_album WHERE in = $user_id GROUP ALL).count OR 0;
-    LET $song_favorites = (SELECT count() FROM user_likes_song WHERE in = $user_id GROUP ALL).count OR 0;
-    LET $artist_favorites = (SELECT count() FROM user_likes_artist WHERE in = $user_id GROUP ALL).count OR 0;
-    LET $playlist_favorites = (SELECT count() FROM user_likes_playlist WHERE in = $user_id GROUP ALL).count OR 0;
+    LET $album_favorites = (SELECT count() FROM user_likes_album WHERE in = $user_id GROUP ALL)[0].count OR 0;
+    LET $song_favorites = (SELECT count() FROM user_likes_song WHERE in = $user_id GROUP ALL)[0].count OR 0;
+    LET $artist_favorites = (SELECT count() FROM user_likes_artist WHERE in = $user_id GROUP ALL)[0].count OR 0;
+    LET $playlist_favorites = (SELECT count() FROM user_likes_playlist WHERE in = $user_id GROUP ALL)[0].count OR 0;
 
     UPDATE $user_id SET favorite_count = $album_favorites + $song_favorites + $artist_favorites + $playlist_favorites;
 };
@@ -319,8 +258,72 @@ DEFINE EVENT update_playlist_stats ON TABLE playlist_contains_song WHEN $event =
 
 -- Événement pour maintenir le compteur total_likes des playlists
 DEFINE EVENT update_playlist_likes_count ON TABLE user_likes_playlist WHEN $event = "CREATE" OR $event = "DELETE" THEN {
-    LET $playlist_id = if $event = "CREATE" { $after.out } else { $before.out };
-
-    LET $total_likes = (SELECT count() FROM user_likes_playlist WHERE out = $playlist_id GROUP ALL).count OR 0;
+    LET $playlist_id = IF $event = 'CREATE' { $after.out } ELSE { $before.out };
+    LET $total_likes = (SELECT count() FROM user_likes_playlist WHERE out = $playlist_id GROUP ALL)[0].count OR 0;
+    
     UPDATE $playlist_id SET total_likes = $total_likes;
+};
+
+
+-- #################
+-- # TABLE user_listens_song (Approche agrégée optimisée)
+-- #################
+DEFINE TABLE user_listens_song SCHEMAFULL;
+DEFINE FIELD in ON user_listens_song TYPE record<user>;
+DEFINE FIELD out ON user_listens_song TYPE record<song>;
+
+-- Statistiques agrégées
+DEFINE FIELD total_listens ON TABLE user_listens_song TYPE int DEFAULT 1;
+DEFINE FIELD total_duration ON TABLE user_listens_song TYPE duration;
+
+-- Historique des 30 dernières écoutes (dates seulement)
+DEFINE FIELD recent_dates ON TABLE user_listens_song TYPE array<datetime> DEFAULT [];
+
+-- Timestamps
+DEFINE FIELD first_listened_at ON TABLE user_listens_song TYPE datetime DEFAULT time::now();
+DEFINE FIELD last_listened_at ON TABLE user_listens_song TYPE datetime DEFAULT time::now();
+
+-- #################
+-- # INDEX pour user_listens_song
+-- #################
+DEFINE INDEX idx_user_listens_song_user_last ON user_listens_song FIELDS in, last_listened_at;
+DEFINE INDEX idx_user_listens_song_user_total ON user_listens_song FIELDS in, total_listens;
+DEFINE INDEX idx_user_listens_song_song_total ON user_listens_song FIELDS out, total_listens;
+DEFINE INDEX idx_user_listens_song_user_song ON user_listens_song FIELDS in, out;
+
+-- #################
+-- # EVENTS pour les statistiques d'écoute agrégées
+-- #################
+DEFINE EVENT update_song_aggregated_stats ON TABLE user_listens_song WHEN $event = "CREATE" OR $event = "UPDATE" THEN {
+    LET $song_id = IF $event = 'CREATE' { $after.out } ELSE { $after.out };
+    
+    -- Mettre à jour total_listens de la chanson (somme de toutes les écoutes agrégées)
+    LET $total_listens = (SELECT math::sum(total_listens) AS total FROM user_listens_song WHERE out = $song_id GROUP ALL)[0].total OR 0;
+    UPDATE $song_id SET total_listens = $total_listens;
+    
+    -- Mettre à jour total_user_listens (nombre d'utilisateurs uniques)
+    LET $unique_listeners = (SELECT count() FROM user_listens_song WHERE out = $song_id GROUP ALL)[0].count OR 0;
+    UPDATE $song_id SET total_user_listens = $unique_listeners;
+};
+
+DEFINE EVENT update_user_aggregated_stats ON TABLE user_listens_song WHEN $event = "CREATE" OR $event = "UPDATE" THEN {
+    LET $user_id = IF $event = 'CREATE' { $after.in } ELSE { $after.in };
+    
+    -- Mettre à jour le compteur d'écoutes de l'utilisateur (somme de toutes les écoutes agrégées)
+    LET $user_listen_count = (SELECT math::sum(total_listens) AS total FROM user_listens_song WHERE in = $user_id GROUP ALL)[0].total OR 0;
+    
+    -- Calculer le temps total d'écoute (somme de toutes les durées agrégées)
+    LET $total_listening_seconds = (
+        SELECT math::sum(total_duration) AS total_duration
+        FROM user_listens_song
+        WHERE in = $user_id
+        GROUP ALL
+    )[0].total_duration OR 0s;
+    
+    -- Convertir en entier (secondes)
+    LET $total_listening_time = math::floor(time::unix($total_listening_seconds));
+    
+    UPDATE $user_id SET
+        listen_count = $user_listen_count,
+        total_listening_time = $total_listening_time;
 };

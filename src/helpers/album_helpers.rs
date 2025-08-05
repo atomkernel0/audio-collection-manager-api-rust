@@ -4,7 +4,7 @@ use surrealdb::{Error, Surreal};
 
 use crate::models::album::Album;
 
-/// Vérifie si un album existe dans la base de données
+/// Check if an album exists in the database
 pub async fn album_exists(db: &Surreal<Any>, album_id: &str) -> Result<bool, Error> {
     let album_thing = Thing::from(("album", album_id));
     let sql_query = "SELECT * FROM $album_id;";

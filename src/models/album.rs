@@ -18,8 +18,11 @@ pub struct Album {
     pub total_duration: Duration,
 
     // Stats
+    #[serde(default)]
     pub total_listens: u32,
+    #[serde(default)]
     pub total_user_listens: u32,
+    #[serde(default)]
     pub total_likes: u32,
 }
 
@@ -35,8 +38,11 @@ pub struct AlbumWithArtists {
     pub dominant_color: Option<String>,
     pub total_tracks: u32,
     pub total_duration: Duration,
+    #[serde(default)]
     pub total_listens: u32,
+    #[serde(default)]
     pub total_user_listens: u32,
+    #[serde(default)]
     pub total_likes: u32,
     pub artists: Vec<Artist>,
 }
@@ -53,8 +59,11 @@ pub struct AlbumWithRelations {
     pub dominant_color: Option<String>,
     pub total_tracks: u32,
     pub total_duration: Duration,
+    #[serde(default)]
     pub total_listens: u32,
+    #[serde(default)]
     pub total_user_listens: u32,
+    #[serde(default)]
     pub total_likes: u32,
     pub artists: Vec<Artist>,
     pub songs: Vec<Song>,

@@ -14,29 +14,54 @@ pub enum Error {
     AuthFailNoAuthTokenCookie,
     AuthFailTokenWrongFormat,
     AuthFailCtxNotInRequestExt,
-    TokenCreationError,
+    TokenCreationError(String),
     InvalidToken,
-
-    // -- Model errors.
-    TicketDeleteFailIdNotFound { id: u64 },
 
     EnvVarError(String),
     DbError(String),
-    AlbumNotFound { id: String },
-    ArtistNotFound { id: String },
-    SongNotFound { id: String },
-    PlaylistNotFound { id: String },
-    UserAlreadyExists { username: String },
-    UserNotFound { username: String },
+    AlbumNotFound {
+        id: String,
+    },
+    ArtistNotFound {
+        id: String,
+    },
+    SongNotFound {
+        id: String,
+    },
+    PlaylistNotFound {
+        id: String,
+    },
+    UserAlreadyExists {
+        username: String,
+    },
+    UserNotFound {
+        username: String,
+    },
+    ReservedUsername {
+        username: String,
+    },
     InvalidPassword,
     InvalidCaptcha,
 
     // -- Favorite errors.
-    FavoriteAlreadyExists { item_type: String, item_id: String },
-    FavoriteNotFound { item_type: String, item_id: String },
-    SongAlreadyExists { id: String },
-    InvalidFavoriteRequest { reason: String },
-    InvalidInput { reason: String },
+    FavoriteAlreadyExists {
+        item_type: String,
+        item_id: String,
+    },
+    FavoriteNotFound {
+        item_type: String,
+        item_id: String,
+    },
+    SongAlreadyExistsInPlaylist {
+        song_id: String,
+        playlist_id: String,
+    },
+    InvalidFavoriteRequest {
+        reason: String,
+    },
+    InvalidInput {
+        reason: String,
+    },
 }
 
 impl core::fmt::Display for Error {
@@ -70,12 +95,8 @@ impl Error {
             | Self::AuthFailTokenWrongFormat
             | Self::AuthFailCtxNotInRequestExt => (StatusCode::FORBIDDEN, ClientError::NO_AUTH),
 
-            Self::TokenCreationError | Self::InvalidToken => {
+            Self::TokenCreationError { .. } | Self::InvalidToken => {
                 (StatusCode::INTERNAL_SERVER_ERROR, ClientError::TOKEN_ERROR)
-            }
-
-            Self::TicketDeleteFailIdNotFound { .. } => {
-                (StatusCode::BAD_REQUEST, ClientError::INVALID_PARAMS)
             }
 
             Error::DbError(_) => (
@@ -95,12 +116,15 @@ impl Error {
             Error::UserAlreadyExists { username: _ } => {
                 (StatusCode::CONFLICT, ClientError::USER_ALREADY_EXISTS)
             }
+            Error::ReservedUsername { username: _ } => {
+                (StatusCode::BAD_REQUEST, ClientError::RESERVED_USERNAME)
+            }
 
             Error::UserNotFound { .. } => (StatusCode::NOT_FOUND, ClientError::RESOURCE_NOT_FOUND),
             Error::InvalidPassword => (StatusCode::FORBIDDEN, ClientError::INVALID_CREDENTIALS),
             Error::InvalidCaptcha => (StatusCode::BAD_REQUEST, ClientError::INVALID_CAPTCHA),
 
-            Error::FavoriteAlreadyExists { .. } | Error::SongAlreadyExists { .. } => {
+            Error::FavoriteAlreadyExists { .. } | Error::SongAlreadyExistsInPlaylist { .. } => {
                 (StatusCode::CONFLICT, ClientError::RESOURCE_ALREADY_EXISTS)
             }
             Error::FavoriteNotFound { .. } => {
@@ -130,6 +154,7 @@ pub enum ClientError {
     RESOURCE_ALREADY_EXISTS,
     TOKEN_ERROR,
     USER_ALREADY_EXISTS,
+    RESERVED_USERNAME,
     INVALID_CREDENTIALS,
     INVALID_CAPTCHA,
 }
@@ -149,5 +174,11 @@ impl From<std::env::VarError> for Error {
 impl From<bcrypt::BcryptError> for Error {
     fn from(err: bcrypt::BcryptError) -> Self {
         Error::DbError(err.to_string())
+    }
+}
+
+impl From<jsonwebtoken::errors::Error> for Error {
+    fn from(err: jsonwebtoken::errors::Error) -> Self {
+        Error::TokenCreationError(err.to_string())
     }
 }

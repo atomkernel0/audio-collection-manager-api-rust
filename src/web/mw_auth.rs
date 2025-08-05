@@ -1,6 +1,6 @@
-use crate::auth::jwt_service::{validate_token, Claims};
+use crate::auth::token_service::{Claims, TokenService};
 use crate::error::{Error, Result};
-use crate::{models::user::User, AppState};
+use crate::{models::user::UserRecord, AppState};
 use axum::body::Body;
 use axum::extract::{Request, State};
 use axum::http::header;
@@ -12,11 +12,11 @@ use serde::{Deserialize, Serialize};
 pub struct Ctx {
     pub user_id: String,
     pub exp: usize,
-    pub user: User,
+    pub user: UserRecord,
 }
 
 impl Ctx {
-    pub fn new(user_id: String, exp: usize, user: User) -> Self {
+    pub fn new(user_id: String, exp: usize, user: UserRecord) -> Self {
         Self { user_id, exp, user }
     }
 }
@@ -33,16 +33,20 @@ pub async fn mw_auth(
         .and_then(|str| str.strip_prefix("Bearer "));
 
     if let Some(token) = token {
-        let claims: Claims = validate_token(token)?;
+        let claims: Claims = TokenService::validate_token(token, &app_state.auth_config)?;
+
+        let user_id = crate::helpers::thing_helpers::parse_id_part(&claims.sub);
+        let user_thing = crate::helpers::thing_helpers::create_user_thing(user_id);
 
         let mut result = app_state
             .db
-            .query(format!("SELECT * FROM {}", claims.sub))
+            .query("SELECT * FROM $user_thing")
+            .bind(("user_thing", user_thing))
             .await?;
-        let user: Option<User> = result.take(0)?;
+        let user: Option<UserRecord> = result.take(0)?;
 
         if let Some(user) = user {
-            let ctx = Ctx::new(claims.sub.clone(), claims.exp, user);
+            let ctx = Ctx::new(claims.sub.clone(), claims.exp as usize, user);
             req.extensions_mut().insert(ctx);
         } else {
             return Err(Error::UserNotFound {

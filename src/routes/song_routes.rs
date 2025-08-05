@@ -1,29 +1,19 @@
-use crate::{
-    controllers::{self, song_handler::listen_song_handler},
-    models::album::AlbumWithRelations,
-    AppState,
-};
+use crate::{controllers::song_controller::SongController, AppState};
 use axum::{
-    extract::{Path, State},
     routing::{get, post},
-    Json, Router,
+    Router,
 };
 
-use crate::error::{Error, Result};
+pub struct SongRoutes;
 
-pub fn routes() -> Router<AppState> {
-    Router::new()
-        .route("/songs/{id}/listen", post(listen_song_handler))
-        .route("/songs/{id}/album", get(get_album_from_song_handler))
-}
-
-async fn get_album_from_song_handler(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-) -> Result<Json<AlbumWithRelations>> {
-    let album = controllers::song_handler::get_album_from_song(&state.db, &id)
-        .await?
-        .ok_or(Error::AlbumNotFound { id })?;
-
-    Ok(Json(album))
+impl SongRoutes {
+    pub fn routes() -> Router<AppState> {
+        Router::new()
+            .route(
+                "/{song_id}/listen",
+                post(SongController::listen_song_handler),
+            )
+            .route("/{song_id}/album", get(SongController::get_album_from_song))
+            .route("/recents", get(SongController::get_user_recent_listens))
+    }
 }
