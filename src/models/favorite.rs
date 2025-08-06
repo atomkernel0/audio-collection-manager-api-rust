@@ -1,7 +1,10 @@
 use serde::{Deserialize, Serialize};
 use surrealdb::Datetime;
 
-use crate::models::{album::Album, artist::Artist, pagination::PaginationInfo, song::Song};
+use crate::models::{
+    album::AlbumWithArtists, artist::ArtistWithAlbums, pagination::PaginationInfo,
+    song::SongWithRelations,
+};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct FavoritesResponse<T> {
@@ -11,8 +14,8 @@ pub struct FavoritesResponse<T> {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AlbumWithFavoriteMetadata {
-    pub album: Album,
-    pub artists: Vec<Artist>,
+    pub album: AlbumWithArtists,
+    #[serde(default)]
     pub sort_order: i32,
     pub last_accessed: Option<Datetime>,
     pub favorited_at: Datetime,
@@ -20,7 +23,8 @@ pub struct AlbumWithFavoriteMetadata {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SongWithFavoriteMetadata {
-    pub song: Song,
+    pub song: SongWithRelations,
+    #[serde(default)]
     pub sort_order: i32,
     pub last_accessed: Option<Datetime>,
     pub favorited_at: Datetime,
@@ -28,7 +32,8 @@ pub struct SongWithFavoriteMetadata {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ArtistWithFavoriteMetadata {
-    pub artist: Artist,
+    pub artist: ArtistWithAlbums,
+    #[serde(default)]
     pub sort_order: i32,
     pub last_accessed: Option<Datetime>,
     pub favorited_at: Datetime,

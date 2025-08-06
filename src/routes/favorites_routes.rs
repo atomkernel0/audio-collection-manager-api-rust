@@ -10,8 +10,17 @@ impl FavoriteRoutes {
     pub fn routes() -> Router<AppState> {
         Router::new()
             .route("/albums", get(FavoriteController::get_favorite_albums))
+            .route(
+                "/albums/ids",
+                get(FavoriteController::get_favorite_album_ids),
+            )
             .route("/artists", get(FavoriteController::get_favorite_artists))
+            .route(
+                "/artists/ids",
+                get(FavoriteController::get_favorite_artist_ids),
+            )
             .route("/songs", get(FavoriteController::get_favorite_songs))
+            .route("/songs/ids", get(FavoriteController::get_favorite_song_ids))
             .route(
                 "/statistics",
                 get(FavoriteController::get_favorites_statistics),

@@ -5,9 +5,10 @@ use crate::{
         song_helpers::song_exists,
         thing_helpers::{
             create_album_thing, create_artist_thing, create_song_thing, create_user_thing,
+            parse_id_part, thing_to_string,
         },
     },
-    models::{album::Album, artist::Artist, favorite::*, pagination::PaginationInfo, song::Song},
+    models::{favorite::*, pagination::PaginationInfo},
     Error,
 };
 use futures::try_join;
@@ -40,7 +41,7 @@ impl FavoriteService {
         let user_thing = create_user_thing(user_id);
 
         let count_sql = format!(
-            "SELECT count() as total FROM {} WHERE in = $user_id GROUP ALL",
+            "SELECT count() as total FROM {} WHERE `in` = $user_id GROUP ALL",
             table_name
         );
         let mut count_response = db
@@ -51,6 +52,21 @@ impl FavoriteService {
         let total_items = count_result.map(|r| r.total).unwrap_or(0);
 
         Ok(total_items)
+    }
+
+    pub async fn get_favorite_albums_count(db: &Surreal<Any>, user_id: &str) -> Result<u64, Error> {
+        Self::get_favorite_count_for_table(db, user_id, "user_likes_album").await
+    }
+
+    pub async fn get_favorite_songs_count(db: &Surreal<Any>, user_id: &str) -> Result<u64, Error> {
+        Self::get_favorite_count_for_table(db, user_id, "user_likes_song").await
+    }
+
+    pub async fn get_favorite_artists_count(
+        db: &Surreal<Any>,
+        user_id: &str,
+    ) -> Result<u64, Error> {
+        Self::get_favorite_count_for_table(db, user_id, "user_likes_artist").await
     }
 
     pub async fn get_favorite_albums(
@@ -79,15 +95,26 @@ impl FavoriteService {
             let data_sql = format!(
                 r#"
                 SELECT
-                    out.* as album,
+                    {{
+                        id: out.id,
+                        title: out.title,
+                        cover_url: out.cover_url,
+                        release_year: out.release_year,
+                        genres: out.genres,
+                        langs: out.langs,
+                        dominant_color: out.dominant_color,
+                        total_tracks: out.total_tracks,
+                        total_duration: out.total_duration,
+                        total_listens: out.total_listens,
+                        total_user_listens: out.total_user_listens,
+                        total_likes: out.total_likes,
+                        artists: (out<-artist_creates_album<-artist[*])
+                    }} AS album,
                     sort_order,
                     last_accessed,
-                    created_at as favorited_at,
-                    (SELECT * FROM artist WHERE id IN (
-                        SELECT out FROM artist_creates_album WHERE in = out.id
-                    )) as artists
+                    created_at AS favorited_at
                 FROM user_likes_album
-                WHERE in = $user_id
+                WHERE `in` = $user_id
                 ORDER BY {} {}
                 LIMIT {} START {}
                 "#,
@@ -98,28 +125,6 @@ impl FavoriteService {
             let albums_data: Vec<AlbumWithFavoriteMetadata> = data_response.take(0)?;
 
             albums_data
-                .into_iter()
-                .map(|data| AlbumWithFavoriteMetadata {
-                    album: Album {
-                        id: data.album.id,
-                        title: data.album.title,
-                        cover_url: data.album.cover_url,
-                        release_year: data.album.release_year,
-                        genres: data.album.genres,
-                        langs: data.album.langs,
-                        dominant_color: data.album.dominant_color,
-                        total_tracks: data.album.total_tracks,
-                        total_duration: data.album.total_duration,
-                        total_listens: data.album.total_listens,
-                        total_user_listens: data.album.total_user_listens,
-                        total_likes: data.album.total_likes,
-                    },
-                    artists: data.artists,
-                    sort_order: data.sort_order,
-                    last_accessed: data.last_accessed,
-                    favorited_at: data.favorited_at,
-                })
-                .collect()
         };
 
         let total_pages = ((total_items as f64) / (page_size as f64)).ceil() as u32;
@@ -137,19 +142,33 @@ impl FavoriteService {
         })
     }
 
-    pub async fn get_favorite_albums_count(db: &Surreal<Any>, user_id: &str) -> Result<u64, Error> {
-        Self::get_favorite_count_for_table(db, user_id, "user_likes_album").await
-    }
-
-    pub async fn get_favorite_songs_count(db: &Surreal<Any>, user_id: &str) -> Result<u64, Error> {
-        Self::get_favorite_count_for_table(db, user_id, "user_likes_song").await
-    }
-
-    pub async fn get_favorite_artists_count(
+    pub async fn get_favorite_album_ids(
         db: &Surreal<Any>,
         user_id: &str,
-    ) -> Result<u64, Error> {
-        Self::get_favorite_count_for_table(db, user_id, "user_likes_artist").await
+    ) -> Result<Vec<String>, Error> {
+        let user_thing = create_user_thing(user_id);
+
+        let total_items = Self::get_favorite_albums_count(db, user_id).await?;
+
+        if total_items == 0 {
+            Ok(Vec::new())
+        } else {
+            let data_sql = "SELECT VALUE out.id FROM user_likes_album WHERE `in` = $user_id";
+
+            let mut data_response = db.query(data_sql).bind(("user_id", user_thing)).await?;
+            let album_things: Vec<Thing> = data_response.take(0)?;
+
+            let album_ids: Vec<String> = album_things
+                .iter()
+                .map(|thing| {
+                    let thing_str = thing_to_string(thing);
+                    let id_part = parse_id_part(&thing_str);
+                    id_part.to_string()
+                })
+                .collect();
+
+            Ok(album_ids)
+        }
     }
 
     pub async fn get_favorite_songs(
@@ -178,12 +197,24 @@ impl FavoriteService {
             let data_sql = format!(
                 r#"
                 SELECT
-                    out.* as song,
-                    sort_order,
+                    {{
+                        id: out.id,
+                        title: out.title,
+                        file_url: out.file_url,
+                        duration: out.duration,
+                        song_index: out.song_index,
+                        tempo: out.tempo,
+                        total_listens: out.total_listens,
+                        total_user_listens: out.total_user_listens,
+                        total_likes: out.total_likes,
+                        artists: (out<-artist_performs_song<-artist[*]),
+                        album: (SELECT * FROM (out<-album_contains_song<-album)[0])[0]
+                    }} AS song,
+                    IF sort_order != NONE THEN sort_order ELSE 0 END as sort_order,
                     last_accessed,
-                    created_at as favorited_at
+                    created_at AS favorited_at
                 FROM user_likes_song
-                WHERE in = $user_id
+                WHERE `in` = $user_id
                 ORDER BY {} {}
                 LIMIT {} START {}
                 "#,
@@ -194,24 +225,6 @@ impl FavoriteService {
             let songs_data: Vec<SongWithFavoriteMetadata> = data_response.take(0)?;
 
             songs_data
-                .into_iter()
-                .map(|data| SongWithFavoriteMetadata {
-                    song: Song {
-                        id: data.song.id,
-                        title: data.song.title,
-                        file_url: data.song.file_url,
-                        duration: data.song.duration,
-                        song_index: data.song.song_index,
-                        tempo: data.song.tempo,
-                        total_listens: data.song.total_listens,
-                        total_user_listens: data.song.total_user_listens,
-                        total_likes: data.song.total_likes,
-                    },
-                    sort_order: data.sort_order,
-                    last_accessed: data.last_accessed,
-                    favorited_at: data.favorited_at,
-                })
-                .collect()
         };
 
         let total_pages = ((total_items as f64) / (page_size as f64)).ceil() as u32;
@@ -227,6 +240,35 @@ impl FavoriteService {
                 has_previous_page: page > 1,
             },
         })
+    }
+
+    pub async fn get_favorite_song_ids(
+        db: &Surreal<Any>,
+        user_id: &str,
+    ) -> Result<Vec<String>, Error> {
+        let user_thing = create_user_thing(user_id);
+
+        let total_items = Self::get_favorite_songs_count(db, user_id).await?;
+
+        if total_items == 0 {
+            Ok(Vec::new())
+        } else {
+            let data_sql = "SELECT VALUE out.id FROM user_likes_song WHERE `in` = $user_id";
+
+            let mut data_response = db.query(data_sql).bind(("user_id", user_thing)).await?;
+            let song_things: Vec<Thing> = data_response.take(0)?;
+
+            let song_ids: Vec<String> = song_things
+                .iter()
+                .map(|thing| {
+                    let thing_str = thing_to_string(thing);
+                    let id_part = parse_id_part(&thing_str);
+                    id_part.to_string()
+                })
+                .collect();
+
+            Ok(song_ids)
+        }
     }
 
     pub async fn get_favorite_artists(
@@ -255,12 +297,22 @@ impl FavoriteService {
             let data_sql = format!(
                 r#"
                 SELECT
-                    out.* as artist,
-                    sort_order,
+                    {{
+                        id: out.id,
+                        name: out.name,
+                        genres: out.genres,
+                        country_code: out.country_code,
+                        artist_image: out.artist_image,
+                        albums_count: out.albums_count,
+                        songs_count: out.songs_count,
+                        total_likes: IF out.total_likes != NONE THEN out.total_likes ELSE 0 END,
+                        albums: (out->artist_creates_album->album.*)
+                    }} AS artist,
+                    IF sort_order != NONE THEN sort_order ELSE 0 END as sort_order,
                     last_accessed,
                     created_at as favorited_at
                 FROM user_likes_artist
-                WHERE in = $user_id
+                WHERE `in` = $user_id
                 ORDER BY {} {}
                 LIMIT {} START {}
                 "#,
@@ -271,23 +323,6 @@ impl FavoriteService {
             let artists_data: Vec<ArtistWithFavoriteMetadata> = data_response.take(0)?;
 
             artists_data
-                .into_iter()
-                .map(|data| ArtistWithFavoriteMetadata {
-                    artist: Artist {
-                        id: data.artist.id,
-                        name: data.artist.name,
-                        genres: data.artist.genres,
-                        country_code: data.artist.country_code,
-                        artist_image: data.artist.artist_image,
-                        albums_count: data.artist.albums_count,
-                        songs_count: data.artist.songs_count,
-                        total_likes: data.artist.total_likes,
-                    },
-                    sort_order: data.sort_order,
-                    last_accessed: data.last_accessed,
-                    favorited_at: data.favorited_at,
-                })
-                .collect()
         };
 
         let total_pages = ((total_items as f64) / (page_size as f64)).ceil() as u32;
@@ -305,6 +340,35 @@ impl FavoriteService {
         })
     }
 
+    pub async fn get_favorite_artist_ids(
+        db: &Surreal<Any>,
+        user_id: &str,
+    ) -> Result<Vec<String>, Error> {
+        let user_thing = create_user_thing(user_id);
+
+        let total_items = Self::get_favorite_artists_count(db, user_id).await?;
+
+        if total_items == 0 {
+            Ok(Vec::new())
+        } else {
+            let data_sql = "SELECT VALUE out.id FROM user_likes_artist WHERE `in` = $user_id";
+
+            let mut data_response = db.query(data_sql).bind(("user_id", user_thing)).await?;
+            let artist_things: Vec<Thing> = data_response.take(0)?;
+
+            let artist_ids: Vec<String> = artist_things
+                .iter()
+                .map(|thing| {
+                    let thing_str = thing_to_string(thing);
+                    let id_part = parse_id_part(&thing_str);
+                    id_part.to_string()
+                })
+                .collect();
+
+            Ok(artist_ids)
+        }
+    }
+
     async fn toggle_favorite_item(
         db: &Surreal<Any>,
         user_id: &str,
@@ -316,7 +380,7 @@ impl FavoriteService {
         let item_bind_name = item_bind_name.to_string();
 
         let sql_check = format!(
-            "SELECT count() as total FROM {} WHERE in = $user AND out = ${} GROUP ALL",
+            "SELECT count() as total FROM {} WHERE `in` = $user AND out = ${} GROUP ALL",
             table_name, &item_bind_name
         );
 
@@ -331,7 +395,7 @@ impl FavoriteService {
 
         if exists {
             let sql_delete = format!(
-                "DELETE {} WHERE in = $user AND out = ${} RETURN NONE",
+                "DELETE {} WHERE `in` = $user AND out = ${} RETURN NONE",
                 table_name, &item_bind_name
             );
             db.query(&sql_delete)
@@ -412,7 +476,7 @@ impl FavoriteService {
         let user_thing = create_user_thing(user_id);
         let album_thing = create_album_thing(album_id);
 
-        let sql_check = "SELECT count() as total FROM user_likes_album WHERE in = $user AND out = $album GROUP ALL";
+        let sql_check = "SELECT count() as total FROM user_likes_album WHERE `in` = $user AND out = $album GROUP ALL";
 
         let mut response = db
             .query(sql_check)
@@ -440,7 +504,7 @@ impl FavoriteService {
         let user_thing = create_user_thing(user_id);
         let artist_thing = create_artist_thing(artist_id);
 
-        let sql_check = "SELECT count() as total FROM user_likes_artist WHERE in = $user AND out = $artist GROUP ALL";
+        let sql_check = "SELECT count() as total FROM user_likes_artist WHERE `in` = $user AND out = $artist GROUP ALL";
 
         let mut response = db
             .query(sql_check)
@@ -468,7 +532,7 @@ impl FavoriteService {
         let user_thing = create_user_thing(user_id);
         let song_thing = create_song_thing(song_id);
 
-        let sql_check = "SELECT count() as total FROM user_likes_song WHERE in = $user AND out = $song GROUP ALL";
+        let sql_check = "SELECT count() as total FROM user_likes_song WHERE `in` = $user AND out = $song GROUP ALL";
 
         let mut response = db
             .query(sql_check)

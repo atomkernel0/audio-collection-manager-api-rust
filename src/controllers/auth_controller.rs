@@ -26,10 +26,11 @@ impl AuthController {
             AuthService::register_user(&state.db, payload.username, payload.password).await?;
 
         let token = match &user.id {
-            Some(id) => TokenService::create_token(
-                parse_id_part(&thing_to_string(id)).to_string(),
-                &state.auth_config,
-            )?,
+            Some(id) => {
+                let thing_str = thing_to_string(id);
+                let id_part = parse_id_part(&thing_str);
+                TokenService::create_token(id_part.to_string(), &state.auth_config)?
+            }
             None => return Err(Error::LoginFail),
         };
 

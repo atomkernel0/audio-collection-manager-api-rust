@@ -74,7 +74,9 @@ impl AuthService {
 
         let token = match &user.id {
             Some(id) => {
-                TokenService::create_token(parse_id_part(&thing_to_string(id)).to_string(), config)?
+                let thing_str = thing_to_string(id);
+                let id_part = parse_id_part(&thing_str);
+                TokenService::create_token(id_part.to_string(), config)?
             }
             None => return Err(Error::LoginFail),
         };

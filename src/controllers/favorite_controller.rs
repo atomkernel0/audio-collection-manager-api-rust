@@ -71,6 +71,15 @@ impl FavoriteController {
         Ok(Json(albums))
     }
 
+    pub async fn get_favorite_album_ids(
+        State(state): State<AppState>,
+        Extension(ctx): Extension<Ctx>,
+    ) -> Result<Json<Vec<String>>, Error> {
+        let album_ids = FavoriteService::get_favorite_album_ids(&state.db, &ctx.user_id).await?;
+
+        Ok(Json(album_ids))
+    }
+
     pub async fn get_favorite_artists(
         State(state): State<AppState>,
         Extension(ctx): Extension<Ctx>,
@@ -82,6 +91,15 @@ impl FavoriteController {
         Ok(Json(artists))
     }
 
+    pub async fn get_favorite_artist_ids(
+        State(state): State<AppState>,
+        Extension(ctx): Extension<Ctx>,
+    ) -> Result<Json<Vec<String>>, Error> {
+        let artist_ids = FavoriteService::get_favorite_artist_ids(&state.db, &ctx.user_id).await?;
+
+        Ok(Json(artist_ids))
+    }
+
     pub async fn get_favorite_songs(
         State(state): State<AppState>,
         Extension(ctx): Extension<Ctx>,
@@ -90,6 +108,15 @@ impl FavoriteController {
         let songs = FavoriteService::get_favorite_songs(&state.db, &ctx.user_id, &query).await?;
 
         Ok(Json(songs))
+    }
+
+    pub async fn get_favorite_song_ids(
+        State(state): State<AppState>,
+        Extension(ctx): Extension<Ctx>,
+    ) -> Result<Json<Vec<String>>, Error> {
+        let song_ids = FavoriteService::get_favorite_song_ids(&state.db, &ctx.user_id).await?;
+
+        Ok(Json(song_ids))
     }
 
     pub async fn check_favorite_album(
