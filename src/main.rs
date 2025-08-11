@@ -16,7 +16,7 @@ use crate::{
     auth::token_service::AuthConfig,
     routes::{
         album_routes::AlbumRoutes, artist_routes::ArtistRoutes, auth_routes::AuthRoutes,
-        favorites_routes::FavoriteRoutes, playlist_routes::PlaylistRoutes,
+        favorite_routes::FavoriteRoutes, playlist_routes::PlaylistRoutes,
         search_routes::SearchRoutes, song_routes::SongRoutes, user_routes::UserRoutes,
     },
 };

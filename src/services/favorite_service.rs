@@ -23,13 +23,34 @@ struct CountResult {
 pub struct FavoriteService;
 
 impl FavoriteService {
-    fn map_sort_by_to_db(sort_by: &str) -> &str {
+    fn map_sort_by_to_db_for_albums(sort_by: &str) -> &str {
         match sort_by {
-            "favoritedAt" => "created_at",
+            "favoritedAt" => "favorited_at",
             "sortOrder" => "sort_order",
             "lastAccessed" => "last_accessed",
-            "title" => "title",
-            _ => "created_at",
+            "title" => "album.title",
+            _ => "favorited_at",
+        }
+    }
+
+    fn map_sort_by_to_db_for_songs(sort_by: &str) -> &str {
+        match sort_by {
+            "favoritedAt" => "favorited_at",
+            "sortOrder" => "sort_order",
+            "lastAccessed" => "last_accessed",
+            "title" => "song.title",
+            _ => "favorited_at",
+        }
+    }
+
+    fn map_sort_by_to_db_for_artists(sort_by: &str) -> &str {
+        match sort_by {
+            "favoritedAt" => "favorited_at",
+            "sortOrder" => "sort_order",
+            "lastAccessed" => "last_accessed",
+            // Name resides under the selected 'artist' object
+            "title" => "artist.name",
+            _ => "favorited_at",
         }
     }
 
@@ -78,7 +99,7 @@ impl FavoriteService {
         let page = query.page.unwrap_or(1);
         let page_size = query.page_size.unwrap_or(20);
         let sort_by_frontend = query.sort_by.as_deref().unwrap_or("favoritedAt");
-        let sort_by = Self::map_sort_by_to_db(sort_by_frontend);
+        let sort_by = Self::map_sort_by_to_db_for_albums(sort_by_frontend);
         let sort_direction = query
             .sort_direction
             .as_deref()
@@ -110,9 +131,9 @@ impl FavoriteService {
                         total_likes: out.total_likes,
                         artists: (out<-artist_creates_album<-artist[*])
                     }} AS album,
-                    sort_order,
+                    IF sort_order != NONE THEN sort_order ELSE 0 END as sort_order,
                     last_accessed,
-                    created_at AS favorited_at
+                    IF created_at != NONE THEN created_at ELSE time::now() END AS favorited_at
                 FROM user_likes_album
                 WHERE `in` = $user_id
                 ORDER BY {} {}
@@ -180,7 +201,7 @@ impl FavoriteService {
         let page = query.page.unwrap_or(1);
         let page_size = query.page_size.unwrap_or(20);
         let sort_by_frontend = query.sort_by.as_deref().unwrap_or("favoritedAt");
-        let sort_by = Self::map_sort_by_to_db(sort_by_frontend);
+        let sort_by = Self::map_sort_by_to_db_for_songs(sort_by_frontend);
         let sort_direction = query
             .sort_direction
             .as_deref()
@@ -212,7 +233,7 @@ impl FavoriteService {
                     }} AS song,
                     IF sort_order != NONE THEN sort_order ELSE 0 END as sort_order,
                     last_accessed,
-                    created_at AS favorited_at
+                    IF created_at != NONE THEN created_at ELSE time::now() END AS favorited_at
                 FROM user_likes_song
                 WHERE `in` = $user_id
                 ORDER BY {} {}
@@ -280,7 +301,7 @@ impl FavoriteService {
         let page = query.page.unwrap_or(1);
         let page_size = query.page_size.unwrap_or(20);
         let sort_by_frontend = query.sort_by.as_deref().unwrap_or("favoritedAt");
-        let sort_by = Self::map_sort_by_to_db(sort_by_frontend);
+        let sort_by = Self::map_sort_by_to_db_for_artists(sort_by_frontend);
         let sort_direction = query
             .sort_direction
             .as_deref()
@@ -310,7 +331,7 @@ impl FavoriteService {
                     }} AS artist,
                     IF sort_order != NONE THEN sort_order ELSE 0 END as sort_order,
                     last_accessed,
-                    created_at as favorited_at
+                    IF created_at != NONE THEN created_at ELSE time::now() END as favorited_at
                 FROM user_likes_artist
                 WHERE `in` = $user_id
                 ORDER BY {} {}
