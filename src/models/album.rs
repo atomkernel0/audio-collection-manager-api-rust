@@ -68,3 +68,16 @@ pub struct AlbumWithRelations {
     pub artists: Vec<Artist>,
     pub songs: Vec<Song>,
 }
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct AlbumsMetaResponse {
+    pub albums: Vec<AlbumWithArtists>,
+    pub total_count: u32,
+    pub has_more: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct AlbumsBatchRequest {
+    pub offset: Option<u32>,
+    pub limit: Option<u32>,
+}

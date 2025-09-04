@@ -13,7 +13,7 @@ pub struct UserRecord {
     pub favorite_count: u16,
 
     pub listening_streak: u16,
-    pub badges: Vec<Badge>,
+    pub badges: Vec<BadgeEnum>,
 
     //NOTE: idk if I will implement the following
     pub level: u16,
@@ -32,7 +32,7 @@ pub struct UserProfile {
     pub favorite_count: u16,
 
     pub listening_streak: u16,
-    pub badges: Vec<Badge>,
+    pub badges: Vec<BadgeEnum>,
 
     //NOTE: idk if I will implement the following
     pub level: u16,
@@ -40,8 +40,8 @@ pub struct UserProfile {
 }
 
 #[allow(dead_code)] //TODO: remove this
-#[derive(strum_macros::Display, Debug, Serialize, Deserialize, Clone)]
-pub enum Badge {
+#[derive(strum_macros::Display, Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Hash)]
+pub enum BadgeEnum {
     // Listening time achievements
     Listen10Hours,   // Bronze badge: 10 hours of total listening
     Listen50Hours,   // Silver badge: 50 hours of total listening

@@ -95,8 +95,18 @@ async fn main() -> Result<()> {
         .layer(TraceLayer::new_for_http())
         .layer(CorsLayer::very_permissive());
 
-    let addr = SocketAddr::from(([127, 0, 0, 1], 8080));
-    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
+    let host = env::var("BIND_HOST").unwrap_or_else(|_| "0.0.0.0".to_string());
+    let port: u16 = env::var("PORT")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(8080);
+
+    let addr: SocketAddr = format!("{}:{}", host, port)
+        .parse()
+        .expect("invalid bind address");
+    let listener = tokio::net::TcpListener::bind(addr)
+        .await
+        .expect("bind failed");
     println!("--> LISTENING on {addr}\n");
 
     axum::serve(

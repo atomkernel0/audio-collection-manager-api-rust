@@ -2,19 +2,18 @@ use crate::error::Result;
 use crate::helpers::song_helpers::song_exists;
 use crate::helpers::thing_helpers::{create_song_thing, create_user_thing};
 use crate::models::album::AlbumWithRelations;
+use crate::models::database_helpers::{CountResult, RelationId};
 use crate::models::pagination::{PaginatedResponse, PaginationInfo, PaginationQuery};
 use crate::models::song::SongWithRelations;
+use crate::services::badge_service::{BadgeService, BadgeUnlockResult};
 use crate::Error;
-use surrealdb::{engine::any::Any, sql::Thing, Surreal};
+use serde::Serialize;
+use surrealdb::{engine::any::Any, Surreal};
 
-#[derive(serde::Deserialize)]
-struct CountResult {
-    total: u64,
-}
-
-#[derive(serde::Deserialize)]
-struct RelationId {
-    id: Thing,
+#[derive(Debug, Serialize)]
+pub struct ListenResult {
+    pub success: bool,
+    pub badge_result: Option<BadgeUnlockResult>,
 }
 
 pub struct SongService;
@@ -24,7 +23,7 @@ impl SongService {
         db: &Surreal<Any>,
         song_id: &str,
         user_id: Option<&str>,
-    ) -> Result<bool> {
+    ) -> Result<ListenResult> {
         let song_thing = create_song_thing(song_id);
 
         if !song_exists(db, &song_id).await? {
@@ -33,8 +32,11 @@ impl SongService {
             });
         }
 
+        let mut badge_result = None;
+
         if let Some(user_id) = user_id {
             let user_thing = create_user_thing(user_id);
+            let user_thing_clone = user_thing.clone();
 
             let check_query =
                 "SELECT count() as total FROM user_listens_song WHERE in = $user_id AND out = $song_id GROUP ALL";
@@ -97,7 +99,7 @@ impl SongService {
 
                 let mut create_response = db
                     .query(create_query)
-                    .bind(("user_id", user_thing))
+                    .bind(("user_id", user_thing_clone))
                     .bind(("song_id", song_thing.clone()))
                     .await?;
 
@@ -109,12 +111,19 @@ impl SongService {
                     ));
                 }
             }
+
+            badge_result = Some(
+                BadgeService::check_badges_after_listen(db, user_thing.clone()).await?
+            );
         }
 
         let update_query = "UPDATE $song_id SET total_listens = (total_listens OR 0) + 1";
         let _update_response = db.query(update_query).bind(("song_id", song_thing)).await?;
 
-        Ok(true)
+        Ok(ListenResult {
+            success: true,
+            badge_result,
+        })
     }
 
     pub async fn get_user_recent_listens(

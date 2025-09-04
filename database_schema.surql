@@ -327,3 +327,172 @@ DEFINE EVENT update_user_aggregated_stats ON TABLE user_listens_song WHEN $event
         listen_count = $user_listen_count,
         total_listening_time = $total_listening_time;
 };
+
+-- #################
+-- # TABLE user_listens_album (Approche agrégée optimisée)
+-- #################
+DEFINE TABLE user_listens_album SCHEMAFULL;
+DEFINE FIELD in ON user_listens_album TYPE record<user>;
+DEFINE FIELD out ON user_listens_album TYPE record<album>;
+
+-- Statistiques agrégées
+DEFINE FIELD total_listens ON TABLE user_listens_album TYPE int DEFAULT 1;
+DEFINE FIELD total_duration ON TABLE user_listens_album TYPE duration;
+
+-- Historique des 30 dernières écoutes (dates seulement)
+DEFINE FIELD recent_dates ON TABLE user_listens_album TYPE array<datetime> DEFAULT [];
+
+-- Timestamps
+DEFINE FIELD first_listened_at ON TABLE user_listens_album TYPE datetime DEFAULT time::now();
+DEFINE FIELD last_listened_at ON TABLE user_listens_album TYPE datetime DEFAULT time::now();
+
+-- #################
+-- # INDEX pour user_listens_album
+-- #################
+DEFINE INDEX idx_user_listens_album_user_last ON user_listens_album FIELDS in, last_listened_at;
+DEFINE INDEX idx_user_listens_album_user_total ON user_listens_album FIELDS in, total_listens;
+DEFINE INDEX idx_user_listens_album_album_total ON user_listens_album FIELDS out, total_listens;
+DEFINE INDEX idx_user_listens_album_user_album ON user_listens_album FIELDS in, out;
+
+-- #################
+-- # EVENTS pour les statistiques d'écoute d'albums agrégées
+-- #################
+DEFINE EVENT update_album_aggregated_stats ON TABLE user_listens_album WHEN $event = "CREATE" OR $event = "UPDATE" THEN {
+    LET $album_id = IF $event = 'CREATE' { $after.out } ELSE { $after.out };
+    
+    -- Mettre à jour total_listens de l'album (somme de toutes les écoutes agrégées)
+    LET $total_listens = (SELECT math::sum(total_listens) AS total FROM user_listens_album WHERE out = $album_id GROUP ALL)[0].total OR 0;
+    UPDATE $album_id SET total_listens = $total_listens;
+    
+    -- Mettre à jour total_user_listens (nombre d'utilisateurs uniques)
+    LET $unique_listeners = (SELECT count() FROM user_listens_album WHERE out = $album_id GROUP ALL)[0].count OR 0;
+    UPDATE $album_id SET total_user_listens = $unique_listeners;
+};
+
+-- Mettre à jour l'event existant pour les stats utilisateur pour inclure les albums
+-- (Remplacer l'event existant update_user_aggregated_stats)
+DEFINE EVENT update_user_aggregated_stats_complete ON TABLE user_listens_song WHEN $event = "CREATE" OR $event = "UPDATE" THEN {
+    LET $user_id = IF $event = 'CREATE' { $after.in } ELSE { $after.in };
+    
+    -- Compteur d'écoutes de chansons
+    LET $song_listen_count = (SELECT math::sum(total_listens) AS total FROM user_listens_song WHERE in = $user_id GROUP ALL)[0].total OR 0;
+    
+    -- Compteur d'écoutes d'albums
+    LET $album_listen_count = (SELECT math::sum(total_listens) AS total FROM user_listens_album WHERE in = $user_id GROUP ALL)[0].total OR 0;
+    
+    -- Temps total d'écoute des chansons (en secondes)
+    LET $song_seconds = (
+        SELECT math::sum(time::unix(time::now()) - time::unix(time::now() - total_duration)) AS total_seconds
+        FROM user_listens_song
+        WHERE in = $user_id
+        GROUP ALL
+    )[0].total_seconds OR 0;
+    
+    -- Temps total d'écoute des albums (en secondes)
+    LET $album_seconds = (
+        SELECT math::sum(time::unix(time::now()) - time::unix(time::now() - total_duration)) AS total_seconds
+        FROM user_listens_album
+        WHERE in = $user_id
+        GROUP ALL
+    )[0].total_seconds OR 0;
+    
+    -- Temps total combiné
+    LET $total_listening_time = $song_seconds + $album_seconds;
+    
+    UPDATE $user_id SET
+        listen_count = $song_listen_count + $album_listen_count,
+        total_listening_time = $total_listening_time;
+};
+
+-- Event similaire pour user_listens_album
+DEFINE EVENT update_user_aggregated_stats_from_album ON TABLE user_listens_album WHEN $event = "CREATE" OR $event = "UPDATE" THEN {
+    LET $user_id = IF $event = 'CREATE' { $after.in } ELSE { $after.in };
+    
+    -- Compteur d'écoutes de chansons
+    LET $song_listen_count = (SELECT math::sum(total_listens) AS total FROM user_listens_song WHERE in = $user_id GROUP ALL)[0].total OR 0;
+    
+    -- Compteur d'écoutes d'albums
+    LET $album_listen_count = (SELECT math::sum(total_listens) AS total FROM user_listens_album WHERE in = $user_id GROUP ALL)[0].total OR 0;
+    
+    -- Temps total d'écoute des chansons (en secondes)
+    LET $song_seconds = (
+        SELECT math::sum(time::unix(time::now()) - time::unix(time::now() - total_duration)) AS total_seconds
+        FROM user_listens_song
+        WHERE in = $user_id
+        GROUP ALL
+    )[0].total_seconds OR 0;
+    
+    -- Temps total d'écoute des albums (en secondes)
+    LET $album_seconds = (
+        SELECT math::sum(time::unix(time::now()) - time::unix(time::now() - total_duration)) AS total_seconds
+        FROM user_listens_album
+        WHERE in = $user_id
+        GROUP ALL
+    )[0].total_seconds OR 0;
+    
+    -- Temps total combiné
+    LET $total_listening_time = $song_seconds + $album_seconds;
+    
+    UPDATE $user_id SET
+        listen_count = $song_listen_count + $album_listen_count,
+        total_listening_time = $total_listening_time;
+};
+
+-- #################
+-- # EVENTS pour les compteurs d'albums et de chansons des artistes
+-- #################
+
+-- Événement pour maintenir le compteur albums_count des artistes
+DEFINE EVENT update_artist_albums_count ON TABLE artist_creates_album WHEN $event = "CREATE" OR $event = "DELETE" THEN {
+    LET $artist_id = IF $event = 'CREATE' { $after.in } ELSE { $before.in };
+    
+    -- Compter le nombre d'albums créés par cet artiste
+    LET $albums_count = (
+        SELECT count() AS cnt 
+        FROM artist_creates_album 
+        WHERE in = $artist_id 
+        GROUP ALL
+    )[0].cnt OR 0;
+    
+    UPDATE $artist_id SET albums_count = $albums_count;
+};
+
+-- Événement pour maintenir le compteur songs_count des artistes
+DEFINE EVENT update_artist_songs_count ON TABLE artist_performs_song WHEN $event = "CREATE" OR $event = "DELETE" THEN {
+    LET $artist_id = IF $event = 'CREATE' { $after.in } ELSE { $before.in };
+    
+    -- Compter le nombre de chansons performées par cet artiste
+    LET $songs_count = (
+        SELECT count() AS cnt 
+        FROM artist_performs_song 
+        WHERE in = $artist_id 
+        GROUP ALL
+    )[0].cnt OR 0;
+    
+    UPDATE $artist_id SET songs_count = $songs_count;
+};
+
+
+-- #################
+-- # EVENTS pour les compteurs de likes d'albums
+-- #################
+
+-- Événement pour maintenir le compteur total_likes des albums
+DEFINE EVENT update_album_likes_count ON TABLE user_likes_album WHEN $event = "CREATE" OR $event = "DELETE" THEN {
+    LET $album_id = IF $event = 'CREATE' { $after.out } ELSE { $before.out };
+    LET $total_likes = (SELECT count() FROM user_likes_album WHERE out = $album_id GROUP ALL)[0].count OR 0;
+    
+    UPDATE $album_id SET total_likes = $total_likes;
+};
+
+-- #################
+-- # EVENTS pour les compteurs de likes de chansons
+-- #################
+
+-- Événement pour maintenir le compteur total_likes des chansons
+DEFINE EVENT update_song_likes_count ON TABLE user_likes_song WHEN $event = "CREATE" OR $event = "DELETE" THEN {
+    LET $song_id = IF $event = 'CREATE' { $after.out } ELSE { $before.out };
+    LET $total_likes = (SELECT count() FROM user_likes_song WHERE out = $song_id GROUP ALL)[0].count OR 0;
+    
+    UPDATE $song_id SET total_likes = $total_likes;
+};

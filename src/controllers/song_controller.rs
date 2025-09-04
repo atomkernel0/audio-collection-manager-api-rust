@@ -5,7 +5,7 @@ use crate::{
         pagination::{PaginatedResponse, PaginationQuery},
         song::SongWithRelations,
     },
-    services::song_service::SongService,
+    services::song_service::{SongService, ListenResult},
     web::mw_auth::Ctx,
     AppState, Error,
 };
@@ -17,16 +17,16 @@ use axum::{
 pub struct SongController;
 
 impl SongController {
-    pub async fn listen_song_handler(
+    pub async fn listen_to_song(
         State(state): State<AppState>,
         Path(song_id): Path<String>,
         ctx: Option<Extension<Ctx>>,
-    ) -> Result<Json<bool>> {
+    ) -> Result<Json<ListenResult>> {
         let user_id = ctx.as_ref().map(|c| c.user_id.as_str());
 
-        let success = SongService::listen_to_song(&state.db, &song_id, user_id).await?;
+        let result = SongService::listen_to_song(&state.db, &song_id, user_id).await?;
 
-        Ok(Json(success))
+        Ok(Json(result))
     }
 
     pub async fn get_user_recent_listens(

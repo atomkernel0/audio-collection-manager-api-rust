@@ -18,11 +18,9 @@ impl AuthService {
         username: String,
         password: String,
     ) -> Result<UserRecord> {
-        if username.to_lowercase() == "me" {
-            return Err(Error::ReservedUsername { username });
+        if username.is_empty() || username.len() > 30 || username.contains(' ') {
+            return Err(Error::InvalidUsername);
         }
-
-        //TODO: pas de pseudo de plus de 30 chars, pas vide, pas d'espaces
 
         let sql = "SELECT * FROM user WHERE username = $username";
         let mut result = db.query(sql).bind(("username", username.clone())).await?;

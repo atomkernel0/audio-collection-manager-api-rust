@@ -16,6 +16,7 @@ pub enum Error {
     AuthFailCtxNotInRequestExt,
     TokenCreationError(String),
     InvalidToken,
+    InvalidUsername,
 
     EnvVarError(String),
     DbError(String),
@@ -35,9 +36,6 @@ pub enum Error {
         username: String,
     },
     UserNotFound {
-        username: String,
-    },
-    ReservedUsername {
         username: String,
     },
     InvalidPassword,
@@ -116,12 +114,9 @@ impl Error {
             Error::UserAlreadyExists { username: _ } => {
                 (StatusCode::CONFLICT, ClientError::USER_ALREADY_EXISTS)
             }
-            Error::ReservedUsername { username: _ } => {
-                (StatusCode::BAD_REQUEST, ClientError::RESERVED_USERNAME)
-            }
 
             Error::UserNotFound { .. } => (StatusCode::NOT_FOUND, ClientError::RESOURCE_NOT_FOUND),
-            Error::InvalidPassword => (StatusCode::FORBIDDEN, ClientError::INVALID_CREDENTIALS),
+            Error::InvalidPassword | Error::InvalidUsername => (StatusCode::FORBIDDEN, ClientError::INVALID_CREDENTIALS),
             Error::InvalidCaptcha => (StatusCode::BAD_REQUEST, ClientError::INVALID_CAPTCHA),
 
             Error::FavoriteAlreadyExists { .. } | Error::SongAlreadyExistsInPlaylist { .. } => {
@@ -154,7 +149,6 @@ pub enum ClientError {
     RESOURCE_ALREADY_EXISTS,
     TOKEN_ERROR,
     USER_ALREADY_EXISTS,
-    RESERVED_USERNAME,
     INVALID_CREDENTIALS,
     INVALID_CAPTCHA,
 }

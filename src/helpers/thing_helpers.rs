@@ -51,8 +51,12 @@ pub fn thing_to_string(thing: &Thing) -> String {
 /// ```
 pub fn parse_id_part(id: &str) -> &str {
     // If the ID contains a table prefix like "table:id", extract just the ID part.
-    if let Some(id_part) = id.split(':').nth(1) {
-        id_part
+    // But only if the prefix is actually a known table name
+    if let Some((prefix, id_part)) = id.split_once(':') {
+        match prefix {
+            "user" | "song" | "album" | "artist" | "playlist" => id_part,
+            _ => id, // If it's not a known table prefix, treat the whole string as the ID
+        }
     } else {
         // Otherwise, the string is already the ID.
         id
@@ -95,10 +99,19 @@ mod tests {
 
     #[tokio::test]
     async fn test_parse_user_id() {
+        // Known table prefixes should be stripped
         assert_eq!(parse_id_part("user:123"), "123");
-        assert_eq!(parse_id_part("123"), "123");
         assert_eq!(parse_id_part("user:test_user"), "test_user");
         assert_eq!(parse_id_part("playlist:test_playlist"), "test_playlist");
+        assert_eq!(parse_id_part("song:1_Jf-4X1051:1"), "1_Jf-4X1051:1");
+        
+        // Simple IDs without prefixes should remain unchanged
+        assert_eq!(parse_id_part("123"), "123");
+        assert_eq!(parse_id_part("1_Jf-4X1051:1"), "1_Jf-4X1051:1");
+        
+        // Unknown prefixes should be treated as part of the ID
+        assert_eq!(parse_id_part("unknown:123"), "unknown:123");
+        assert_eq!(parse_id_part("1_Jf-4X1051:1"), "1_Jf-4X1051:1");
     }
 
     #[tokio::test]
@@ -114,6 +127,11 @@ mod tests {
         let song_thing = create_song_thing("song:56");
         assert_eq!(song_thing.tb, "song");
         assert_eq!(song_thing.id.to_string(), "⟨56⟩");
+        
+        // Test with complex song ID
+        let complex_song_thing = create_song_thing("1_Jf-4X1051:1");
+        assert_eq!(complex_song_thing.tb, "song");
+        assert_eq!(complex_song_thing.id.to_string(), "⟨1_Jf-4X1051:1⟩");
 
         let artist_thing = create_artist_thing("artist:78");
         assert_eq!(artist_thing.tb, "artist");

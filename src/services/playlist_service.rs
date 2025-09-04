@@ -27,13 +27,6 @@ struct UserLikesPlaylist {
     last_accessed: Option<surrealdb::sql::Datetime>,
 }
 
-/*
-    implémentation Angular:
-    bouton "ajouter dans playlist" => affiche la liste des playlists
-    créer -> affiche Dialog avec "indiquez le nom de la playlist"
-    ensuite ça affiche la liste avec la nouvelle, et on ajoute !
-*/
-
 pub struct PlaylistService;
 
 impl PlaylistService {
@@ -158,7 +151,6 @@ impl PlaylistService {
         Ok(playlist_thing)
     }
 
-    /// Ajoute une chanson à une playlist avec validation complète et gestion d'erreurs robuste
     pub async fn add_song_to_playlist(
         db: &Surreal<Any>,
         user_id: &str,
@@ -181,8 +173,6 @@ impl PlaylistService {
             });
         }
 
-        println!("working software");
-
         let playlist = Self::validate_playlist_ownership(db, playlist_id, user_id).await?;
 
         if playlist.songs_count >= 1000 {
@@ -194,7 +184,6 @@ impl PlaylistService {
             });
         }
 
-        // Vérifier que la chanson existe
         let song_check = song_exists(db, song_id).await.map_err(|e| {
             Error::DbError(format!(
                 "Erreur lors de la vérification de la chanson '{}': {}",
@@ -208,7 +197,6 @@ impl PlaylistService {
             });
         }
 
-        // Vérifier que la chanson n'est pas déjà dans la playlist
         if Self::song_exists_in_playlist(db, playlist_id, song_id).await? {
             return Err(Error::SongAlreadyExistsInPlaylist {
                 song_id: song_id.to_string(),
@@ -229,7 +217,6 @@ impl PlaylistService {
             .await
             .map_err(|e| Error::DbError(format!("Erreur lors de l'ajout de la chanson '{}' à la playlist '{}': {}", song_id, playlist_id, e)))?;
 
-        // Mettre à jour les statistiques de la playlist
         Self::update_playlist_stats(db, playlist_id)
             .await
             .map_err(|e| {
@@ -272,6 +259,8 @@ impl PlaylistService {
     ) -> Result<PlaylistWithSongs, Error> {
         let playlist_thing = create_playlist_thing(playlist_id);
 
+        println!("DEBUG: Fetching playlist with songs for playlist_id: {}", playlist_id);
+
         let mut playlists: Vec<PlaylistWithSongs> = db
             .query(
                 r#"
@@ -279,7 +268,7 @@ impl PlaylistService {
                     (SELECT
                         out.id as id,
                         out.title as title,
-                        out.duration as duration,
+                        out.duration OR 0s as duration,
                         out.file_url as file_url,
                         out.song_index as song_index,
                         out.tempo as tempo,
@@ -289,15 +278,23 @@ impl PlaylistService {
                         added_at,
                         (out<-artist_performs_song<-artist) AS artists,
                         (out<-album_contains_song<-album)[0] AS album
-                    FROM playlist_contains_song WHERE in = $parent.id ORDER BY added_at ASC) AS songs
+                    FROM playlist_contains_song WHERE in = $parent.id AND out.id IS NOT NONE ORDER BY added_at ASC) AS songs
                 FROM playlist
                 WHERE id = $playlist
                 FETCH created_by, songs, songs.artists, songs.album
             "#,
             )
             .bind(("playlist", playlist_thing))
-            .await?
-            .take(0)?;
+            .await
+            .map_err(|e| {
+                eprintln!("DEBUG: Error fetching playlist with songs: {}", e);
+                Error::DbError(format!("Erreur lors de la récupération de la playlist: {}", e))
+            })?
+            .take(0)
+            .map_err(|e| {
+                eprintln!("DEBUG: Deserialization error in get_playlist_with_songs: {}", e);
+                Error::DbError(format!("Erreur de désérialisation playlist: {}", e))
+            })?;
 
         playlists.pop().ok_or_else(|| Error::PlaylistNotFound {
             id: format!("Playlist '{}' non trouvée", playlist_id),
@@ -395,25 +392,36 @@ impl PlaylistService {
 
         let songs_count = count_results.pop().map(|r| r.count).unwrap_or(0);
 
+        // Récupérer toutes les durées et les additionner
         #[derive(serde::Deserialize)]
-        struct DurationResult {
-            total: surrealdb::sql::Duration,
+        struct SongDuration {
+            duration: Option<surrealdb::sql::Duration>,
         }
 
-        let query = "SELECT (IF count(out.duration) > 0 THEN math::sum(out.duration) ELSE 0s END) AS total FROM playlist_contains_song WHERE in = $playlist GROUP ALL";
+        let query = "SELECT out.duration as duration FROM playlist_contains_song WHERE in = $playlist AND out.id IS NOT NONE";
 
-        let mut duration_results: Vec<DurationResult> = db
+        println!("DEBUG: Fetching song durations for playlist_id: {}", playlist_id);
+
+        let duration_results: Vec<SongDuration> = db
             .query(query)
             .bind(("playlist", playlist_thing.clone()))
             .await
-            .map_err(|e| Error::DbError(format!("Erreur lors du calcul de la durée: {}", e)))?
+            .map_err(|e| {
+                eprintln!("DEBUG: Error fetching durations: {}", e);
+                Error::DbError(format!("Erreur lors de la récupération des durées: {}", e))
+            })?
             .take(0)
-            .map_err(|e| Error::DbError(format!("Erreur de désérialisation de la durée: {}", e)))?;
+            .map_err(|e| {
+                eprintln!("DEBUG: Deserialization error for durations: {}", e);
+                Error::DbError(format!("Erreur de désérialisation des durées: {}", e))
+            })?;
 
         let total_duration = duration_results
-            .pop()
-            .map(|r| r.total)
-            .unwrap_or(surrealdb::sql::Duration::from_secs(0));
+            .into_iter()
+            .filter_map(|r| r.duration)
+            .fold(surrealdb::sql::Duration::from_secs(0), |acc, d| {
+                surrealdb::sql::Duration::from_secs(acc.as_secs() + d.as_secs())
+            });
 
         // Mettre à jour la playlist avec les nouvelles statistiques
         let _: surrealdb::Response = db

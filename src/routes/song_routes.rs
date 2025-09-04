@@ -11,7 +11,7 @@ impl SongRoutes {
         Router::new()
             .route(
                 "/{song_id}/listen",
-                post(SongController::listen_song_handler),
+                post(SongController::listen_to_song),
             )
             .route("/{song_id}/album", get(SongController::get_album_from_song))
             .route("/recents", get(SongController::get_user_recent_listens))
