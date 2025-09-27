@@ -58,8 +58,8 @@ jobs:
     - name: Create test environment file
       run: |
         echo "DB_URL=${{ secrets.DB_URL_TEST }}" > .env
-        echo "DB_NS=test" >> .env
-        echo "DB_NAME=test_ci_${{ github.run_id }}" >> .env
+        echo "DB_NS=${{ secrets.DB_NS }}" >> .env
+        echo "DB_NAME=${{ secrets.DB_NAME }}" >> .env
         echo "DB_USER=${{ secrets.DB_USER_TEST }}" >> .env
         echo "DB_PASSWORD=${{ secrets.DB_PASSWORD_TEST }}" >> .env
         echo "HCAPTCHA_SECRET=${{ secrets.HCAPTCHA_SECRET_TEST }}" >> .env
@@ -104,16 +104,16 @@ jobs:
           target
         key: ${{ runner.os }}-cargo-release-${{ hashFiles('**/Cargo.lock') }}
     
-    - name: Create minimal env for build check
+    - name: Create env for build check
       run: |
-        echo "DB_URL=memory" > .env
-        echo "DB_NS=test" >> .env
-        echo "DB_NAME=test" >> .env
-        echo "DB_USER=test" >> .env
-        echo "DB_PASSWORD=test" >> .env
-        echo "HCAPTCHA_SECRET=test" >> .env
-        echo "JWT_SECRET=test_secret_key" >> .env
-        echo "WEBSITE_URL=http://localhost" >> .env
+        echo "DB_URL=${{ secrets.DB_URL_TEST }}" > .env
+        echo "DB_NS=${{ secrets.DB_NS }}" >> .env
+        echo "DB_NAME=${{ secrets.DB_NAME }}" >> .env
+        echo "DB_USER=${{ secrets.DB_USER_TEST }}" >> .env
+        echo "DB_PASSWORD=${{ secrets.DB_PASSWORD_TEST }}" >> .env
+        echo "HCAPTCHA_SECRET=${{ secrets.HCAPTCHA_SECRET_TEST }}" >> .env
+        echo "JWT_SECRET=${{ secrets.JWT_SECRET_TEST }}" >> .env
+        echo "WEBSITE_URL=http://localhost:3000" >> .env
         echo "TOKEN_DURATION_MIN=120" >> .env
     
     - name: Build release
