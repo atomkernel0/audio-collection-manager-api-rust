@@ -74,6 +74,28 @@ impl IntoResponse for Error {
     fn into_response(self) -> Response {
         let (status_code, client_error) = self.client_status_and_error();
 
+        // Add logging based on status code
+        match status_code {
+            StatusCode::INTERNAL_SERVER_ERROR | StatusCode::BAD_GATEWAY => {
+                tracing::error!("Error: {:?}", self);
+            }
+            StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => {
+                tracing::warn!("Auth error: {:?}", self);
+            }
+            StatusCode::NOT_FOUND => {
+                tracing::debug!("Not found: {:?}", self);
+            }
+            StatusCode::BAD_REQUEST => {
+                tracing::warn!("Bad request: {:?}", self);
+            }
+            StatusCode::CONFLICT => {
+                tracing::warn!("Conflict: {:?}", self);
+            }
+            _ => {
+                tracing::debug!("Response error: {:?}", self);
+            }
+        }
+
         let response_body = serde_json::json!({
             "error": client_error.as_ref(),
             "details": self.to_string()
@@ -108,6 +130,9 @@ impl Error {
                 (StatusCode::NOT_FOUND, ClientError::RESOURCE_NOT_FOUND)
             }
             Error::SongNotFound { id: _ } => {
+                (StatusCode::NOT_FOUND, ClientError::RESOURCE_NOT_FOUND)
+            }
+            Error::PlaylistNotFound { id: _ } => {
                 (StatusCode::NOT_FOUND, ClientError::RESOURCE_NOT_FOUND)
             }
 
@@ -174,5 +199,11 @@ impl From<bcrypt::BcryptError> for Error {
 impl From<jsonwebtoken::errors::Error> for Error {
     fn from(err: jsonwebtoken::errors::Error) -> Self {
         Error::TokenCreationError(err.to_string())
+    }
+}
+
+impl From<std::io::Error> for Error {
+    fn from(err: std::io::Error) -> Self {
+        Error::DbError(format!("IO error: {}", err))
     }
 }

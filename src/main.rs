@@ -1,16 +1,22 @@
-use std::{env, net::SocketAddr};
+use std::{env, net::SocketAddr, time::Duration};
 
 use axum::{
     middleware::{self},
     Router,
+    body::Body,
+    http::{Request, Response},
 };
 use surrealdb::{
     engine::any::{self, Any},
     opt::auth::Root,
     Surreal,
 };
-
-use tower_http::{cors::CorsLayer, trace::TraceLayer};
+use tower_http::{
+    cors::CorsLayer, 
+    trace::TraceLayer,
+};
+use tracing::Span;
+use uuid::Uuid;
 
 use crate::{
     auth::token_service::AuthConfig,
@@ -36,7 +42,7 @@ mod web;
 struct AppState {
     db: Surreal<Any>,
     #[allow(dead_code)]
-    rate_limit_cache: moka::future::Cache<String, ()>, //TODO: implement feature
+    rate_limit_cache: moka::future::Cache<String, ()>,
     auth_config: AuthConfig,
 }
 
@@ -44,30 +50,31 @@ struct AppState {
 async fn main() -> Result<()> {
     dotenvy::dotenv().ok();
 
-    tracing_subscriber::fmt()
-        .with_target(false)
-        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
-        .init();
+    init_tracing();
 
+    tracing::info!("Starting Audio Collection Manager API...");
+
+    // Load environment variables
     let db_url = env::var("DB_URL")?;
     let db_ns = env::var("DB_NS")?;
     let db_name = env::var("DB_NAME")?;
     let db_user = env::var("DB_USER")?;
     let db_password = env::var("DB_PASSWORD")?;
 
+    tracing::info!("Connecting to database at: {}", db_url);
+    
     let db = any::connect(&db_url).await?;
-
     db.use_ns(&db_ns).use_db(&db_name).await?;
-
     db.signin(Root {
         username: &db_user,
         password: &db_password,
     })
     .await?;
 
-    println!("Connected to DB!");
+    tracing::info!("Database connected successfully!");
 
-    let auth_config = AuthConfig::from_env().expect("Failed to load auth configuration");
+    let auth_config = AuthConfig::from_env()?;
+    tracing::info!("Auth configuration loaded");
 
     let app_state = AppState {
         db,
@@ -92,7 +99,36 @@ async fn main() -> Result<()> {
     let routes_all = Router::new()
         .nest("/api", routes_api)
         .with_state(app_state)
-        .layer(TraceLayer::new_for_http())
+        .layer(
+            TraceLayer::new_for_http()
+                .make_span_with(|request: &Request<Body>| {
+                    let request_id = Uuid::new_v4();
+                    tracing::info_span!(
+                        "http_request",
+                        request_id = %request_id,
+                        method = %request.method(),
+                        path = %request.uri().path(),
+                    )
+                })
+                .on_request(|request: &Request<Body>, _span: &Span| {
+                    tracing::info!(
+                        "{} {}",
+                        request.method(),
+                        request.uri().path()
+                    );
+                })
+                .on_response(|response: &Response<Body>, latency: Duration, _span: &Span| {
+                    let status = response.status();
+                    let latency_ms = latency.as_millis();
+                    
+                    match status.as_u16() {
+                        200..=299 => tracing::info!("{} ({}ms)", status, latency_ms),
+                        400..=499 => tracing::warn!("⚠️ {} ({}ms)", status, latency_ms),
+                        500..=599 => tracing::error!("❌ {} ({}ms)", status, latency_ms),
+                        _ => tracing::info!("{} ({}ms)", status, latency_ms),
+                    }
+                })
+        )
         .layer(CorsLayer::very_permissive());
 
     let host = env::var("BIND_HOST").unwrap_or_else(|_| "0.0.0.0".to_string());
@@ -103,18 +139,37 @@ async fn main() -> Result<()> {
 
     let addr: SocketAddr = format!("{}:{}", host, port)
         .parse()
-        .expect("invalid bind address");
-    let listener = tokio::net::TcpListener::bind(addr)
-        .await
-        .expect("bind failed");
-    println!("--> LISTENING on {addr}\n");
+        .expect("Invalid bind address");
+    
+    let listener = tokio::net::TcpListener::bind(addr).await?;
+    
+    tracing::info!("Listening on http://{}", addr);
 
     axum::serve(
         listener,
         routes_all.into_make_service_with_connect_info::<SocketAddr>(),
     )
-    .await
-    .unwrap();
+    .await?;
 
     Ok(())
+}
+
+fn init_tracing() {
+    use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+
+    let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| {
+            "audio_collection_manager_rust=debug,tower_http=info,info".into()
+        });
+
+    tracing_subscriber::registry()
+        .with(env_filter)
+        .with(
+            tracing_subscriber::fmt::layer()
+                .with_target(false)
+                .with_file(true)
+                .with_line_number(true)
+                .compact()
+        )
+        .init();
 }
