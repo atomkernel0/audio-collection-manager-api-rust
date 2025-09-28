@@ -1,6 +1,8 @@
 /target
 /data
 .env
+.env.local
+.env.*.local
 
 create_tables.md
 new_database_schema.surql
