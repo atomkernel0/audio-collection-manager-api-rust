@@ -39,27 +39,64 @@ pub struct UserProfile {
     pub experience_points: u32,
 }
 
-#[allow(dead_code)] //TODO: remove this
-#[derive(strum_macros::Display, Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Hash)]
 pub enum BadgeEnum {
     // Listening time achievements
-    Listen10Hours,   // Bronze badge: 10 hours of total listening
-    Listen50Hours,   // Silver badge: 50 hours of total listening
-    Listen100Hours,  // Gold badge: 100 hours of total listening
-    Listen500Hours,  // Platinum badge: 500 hours of total listening
-    Listen1000Hours, // Diamond badge: 1000 hours of total listening
+    #[serde(rename = "listen_10_hours")]
+    Listen10Hours,
+    #[serde(rename = "listen_50_hours")]
+    Listen50Hours,
+    #[serde(rename = "listen_100_hours")]
+    Listen100Hours,
+    #[serde(rename = "listen_500_hours")]
+    Listen500Hours,
+    #[serde(rename = "listen_1000_hours")]
+    Listen1000Hours,
 
     // Favorite tracking achievements
-    Favorite10Song,  // Bronze badge: 10 songs added to favorites
-    Favorite20Song,  // Silver badge: 20 songs added to favorites
-    Favorite50Song,  // Gold badge: 50 songs added to favorites
-    Favorite100Song, // Platinum badge: 100 songs added to favorites
-    Favorite200Song, // Diamond badge: 200 songs added to favorites
+    #[serde(rename = "favorite_10_song")]
+    Favorite10Song,
+    #[serde(rename = "favorite_20_song")]
+    Favorite20Song,
+    #[serde(rename = "favorite_50_song")]
+    Favorite50Song,
+    #[serde(rename = "favorite_100_song")]
+    Favorite100Song,
+    #[serde(rename = "favorite_200_song")]
+    Favorite200Song,
 
     // Playlist contributions achievements
-    Playlist10Song,  // Bronze badge: 10 songs added to playlists
-    Playlist30Song,  // Silver badge: 30 songs added to playlists
-    Playlist70Song,  // Gold badge: 70 songs added to playlists
-    Playlist150Song, // Platinum badge: 150 songs added to playlists
-    Playlist250Song, // Diamond badge: 250 songs added to playlists
+    #[serde(rename = "playlist_10_song")]
+    Playlist10Song,
+    #[serde(rename = "playlist_30_song")]
+    Playlist30Song,
+    #[serde(rename = "playlist_70_song")]
+    Playlist70Song,
+    #[serde(rename = "playlist_150_song")]
+    Playlist150Song,
+    #[serde(rename = "playlist_250_song")]
+    Playlist250Song,
+}
+
+impl std::fmt::Display for BadgeEnum {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            BadgeEnum::Listen10Hours => "listen_10_hours",
+            BadgeEnum::Listen50Hours => "listen_50_hours",
+            BadgeEnum::Listen100Hours => "listen_100_hours",
+            BadgeEnum::Listen500Hours => "listen_500_hours",
+            BadgeEnum::Listen1000Hours => "listen_1000_hours",
+            BadgeEnum::Favorite10Song => "favorite_10_song",
+            BadgeEnum::Favorite20Song => "favorite_20_song",
+            BadgeEnum::Favorite50Song => "favorite_50_song",
+            BadgeEnum::Favorite100Song => "favorite_100_song",
+            BadgeEnum::Favorite200Song => "favorite_200_song",
+            BadgeEnum::Playlist10Song => "playlist_10_song",
+            BadgeEnum::Playlist30Song => "playlist_30_song",
+            BadgeEnum::Playlist70Song => "playlist_70_song",
+            BadgeEnum::Playlist150Song => "playlist_150_song",
+            BadgeEnum::Playlist250Song => "playlist_250_song",
+        };
+        write!(f, "{}", s)
+    }
 }
