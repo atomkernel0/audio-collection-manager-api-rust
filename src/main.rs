@@ -36,7 +36,7 @@ mod helpers;
 mod models;
 mod routes;
 mod services;
-mod web;
+mod middlewares;
 
 #[derive(Clone)]
 struct AppState {
@@ -87,17 +87,20 @@ async fn main() -> Result<()> {
         .nest("/albums", AlbumRoutes::routes())
         .nest("/artists", ArtistRoutes::routes())
         .nest("/song", SongRoutes::routes())
+        .nest("/search", SearchRoutes::routes());
+
+    let protected_routes = Router::new()
         .nest("/user", UserRoutes::routes())
         .nest("/favorites", FavoriteRoutes::routes())
-        .nest("/search", SearchRoutes::routes())
         .nest("/playlist", PlaylistRoutes::routes())
         .route_layer(middleware::from_fn_with_state(
             app_state.clone(),
-            web::mw_auth::mw_auth,
+            middlewares::mw_auth::mw_auth,
         ));
 
     let routes_all = Router::new()
         .nest("/api", routes_api)
+        .nest("/api", protected_routes)
         .with_state(app_state)
         .layer(
             TraceLayer::new_for_http()

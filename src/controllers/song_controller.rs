@@ -6,7 +6,7 @@ use crate::{
         song::SongWithRelations,
     },
     services::song_service::{SongService, ListenResult},
-    web::mw_auth::Ctx,
+    middlewares::mw_auth::Ctx,
     AppState, Error,
 };
 use axum::{

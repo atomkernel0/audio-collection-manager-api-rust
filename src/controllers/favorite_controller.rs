@@ -1,4 +1,4 @@
-use crate::{error::Error, web::mw_auth::Ctx, AppState};
+use crate::{error::Error, middlewares::mw_auth::Ctx, AppState};
 use axum::{
     extract::{Path, Query, State},
     Extension, Json,

@@ -31,30 +31,28 @@ pub async fn mw_auth(
         .headers()
         .get(header::AUTHORIZATION)
         .and_then(|value| value.to_str().ok())
-        .and_then(|str| str.strip_prefix("Bearer "));
+        .and_then(|str| str.strip_prefix("Bearer "))
+        .ok_or(Error::AuthFailNoAuthTokenCookie)?;
 
-    if let Some(token) = token {
-        let claims: Claims = TokenService::validate_token(token, &app_state.auth_config)?;
+    let claims: Claims = TokenService::validate_token(token, &app_state.auth_config)?;
 
-        let sub_str = claims.sub.clone();
-        let user_id = parse_id_part(&sub_str);
-        let user_thing = create_user_thing(user_id);
+    let sub_str = claims.sub.clone();
+    let user_id = parse_id_part(&sub_str);
+    let user_thing = create_user_thing(user_id);
 
-        let mut result = app_state
-            .db
-            .query("SELECT * FROM $user_thing")
-            .bind(("user_thing", user_thing))
-            .await?;
-        let user: Option<UserRecord> = result.take(0)?;
+    let mut result = app_state
+        .db
+        .query("SELECT * FROM $user_thing")
+        .bind(("user_thing", user_thing))
+        .await?;
+    let user: Option<UserRecord> = result.take(0)?;
 
-        if let Some(user) = user {
-            let ctx = Ctx::new(claims.sub.clone(), claims.exp as usize, user);
-            req.extensions_mut().insert(ctx);
-        } else {
-            return Err(Error::UserNotFound {
-                username: claims.sub,
-            });
-        }
-    }
+    let user = user.ok_or(Error::UserNotFound {
+        username: claims.sub.clone(),
+    })?;
+
+    let ctx = Ctx::new(claims.sub, claims.exp as usize, user);
+    req.extensions_mut().insert(ctx);
+
     Ok(next.run(req).await)
 }

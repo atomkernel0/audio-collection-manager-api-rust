@@ -9,7 +9,7 @@ use surrealdb::sql::Thing;
 use crate::{
     models::playlist::{CreatePlaylistRequest, Playlist, PlaylistWithSongs},
     services::playlist_service::PlaylistService,
-    web::mw_auth::Ctx,
+    middlewares::mw_auth::Ctx,
     AppState, Error,
 };
 

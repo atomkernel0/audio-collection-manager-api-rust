@@ -8,7 +8,7 @@ use axum::{
     response::Response,
 };
 
-use crate::{web::mw_auth::Ctx, AppState};
+use crate::{middlewares::mw_auth::Ctx, AppState};
 
 pub async fn rate_limit_middleware(
     State(app_state): State<AppState>,

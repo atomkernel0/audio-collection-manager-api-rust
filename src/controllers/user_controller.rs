@@ -4,7 +4,7 @@ use axum::{
 };
 
 use crate::{
-    models::user::UserProfile, services::user_service::UserService, web::mw_auth::Ctx, AppState,
+    models::user::UserProfile, services::user_service::UserService, middlewares::mw_auth::Ctx, AppState,
     Error,
 };
 

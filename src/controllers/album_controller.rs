@@ -3,7 +3,7 @@ use crate::{
     models::album::{AlbumWithArtists, AlbumWithRelations, AlbumsMetaResponse},
     models::database_helpers::CountResult,
     services::album_service::AlbumService,
-    web::mw_auth::Ctx,
+    middlewares::mw_auth::Ctx,
     AppState,
     Result,
 };
