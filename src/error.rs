@@ -60,6 +60,10 @@ pub enum Error {
     InvalidInput {
         reason: String,
     },
+    RateLimited {
+        reason: String,
+        retry_after_secs: u64,
+    },
 }
 
 impl core::fmt::Display for Error {

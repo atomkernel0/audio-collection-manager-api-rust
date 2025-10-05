@@ -3,16 +3,18 @@ use crate::{
     models::album::{AlbumWithArtists, AlbumWithRelations, AlbumsMetaResponse},
     models::database_helpers::CountResult,
     services::album_service::AlbumService,
+    validators::listen_validator::{ListenValidator, ValidationResult},
     middlewares::mw_auth::Ctx,
     AppState,
     Result,
 };
 use axum::{
-    extract::{Path, State, Query},
+    extract::{ConnectInfo, Path, State, Query},
     Extension,
     Json,
 };
 use serde::Deserialize;
+use std::net::SocketAddr;
 
 pub struct AlbumController;
 
@@ -125,9 +127,37 @@ impl AlbumController {
     pub async fn listen_to_album(
         State(state): State<AppState>,
         Path(album_id): Path<String>,
+        ConnectInfo(addr): ConnectInfo<SocketAddr>,
         ctx: Option<Extension<Ctx>>,
     ) -> Result<Json<bool>> {
         let user_id = ctx.as_ref().map(|c| c.user_id.as_str());
+        let client_ip = addr.ip().to_string();
+
+        let album = AlbumService::get_album(&state.db, &album_id)
+            .await?
+            .ok_or_else(|| Error::AlbumNotFound {
+                id: album_id.clone(),
+            })?;
+
+        let validation_result = ListenValidator::validate_album_listen(
+            &state.db,
+            &album_id,
+            user_id,
+            Some(&client_ip),
+            album.total_duration.as_secs(),
+        )
+        .await?;
+
+        if let ValidationResult::RateLimited {
+            reason,
+            retry_after_secs,
+        } = validation_result
+        {
+            return Err(Error::RateLimited {
+                reason,
+                retry_after_secs,
+            });
+        }
 
         let success = AlbumService::listen_to_album(&state.db, &album_id, user_id).await?;
 

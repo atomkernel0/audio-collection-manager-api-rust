@@ -37,6 +37,7 @@ mod models;
 mod routes;
 mod services;
 mod middlewares;
+mod validators;
 
 #[derive(Clone)]
 struct AppState {
@@ -87,7 +88,11 @@ async fn main() -> Result<()> {
         .nest("/albums", AlbumRoutes::routes())
         .nest("/artists", ArtistRoutes::routes())
         .nest("/song", SongRoutes::routes())
-        .nest("/search", SearchRoutes::routes());
+        .nest("/search", SearchRoutes::routes())
+        .route_layer(middleware::from_fn_with_state(
+            app_state.clone(),
+            middlewares::mw_rate_limit::rate_limit_middleware,
+        ));
 
     let protected_routes = Router::new()
         .nest("/user", UserRoutes::routes())
@@ -96,6 +101,10 @@ async fn main() -> Result<()> {
         .route_layer(middleware::from_fn_with_state(
             app_state.clone(),
             middlewares::mw_auth::mw_auth,
+        ))
+        .route_layer(middleware::from_fn_with_state(
+            app_state.clone(),
+            middlewares::mw_rate_limit::rate_limit_middleware,
         ));
 
     let routes_all = Router::new()

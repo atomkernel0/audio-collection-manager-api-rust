@@ -1,18 +1,15 @@
 use crate::{
-    error::Result,
-    models::{
+    error::Result, middlewares::mw_auth::Ctx, models::{
         album::AlbumWithRelations,
         pagination::{PaginatedResponse, PaginationQuery},
-        song::SongWithRelations,
-    },
-    services::song_service::{SongService, ListenResult},
-    middlewares::mw_auth::Ctx,
-    AppState, Error,
+        song::{SongWithRelations},
+    }, services::song_service::{ListenResult, SongService}, validators::listen_validator::{ListenValidator, ValidationResult}, AppState, Error
 };
 use axum::{
-    extract::{Path, Query, State},
+    extract::{ConnectInfo, Path, Query, State},
     Extension, Json,
 };
+use std::net::SocketAddr;
 
 pub struct SongController;
 
@@ -20,11 +17,36 @@ impl SongController {
     pub async fn listen_to_song(
         State(state): State<AppState>,
         Path(song_id): Path<String>,
+        ConnectInfo(addr): ConnectInfo<SocketAddr>,
         ctx: Option<Extension<Ctx>>,
     ) -> Result<Json<ListenResult>> {
         let user_id = ctx.as_ref().map(|c| c.user_id.as_str());
+        let client_ip = addr.ip().to_string();
 
-        let result = SongService::listen_to_song(&state.db, &song_id, user_id).await?;
+        let song = SongService::get_song_by_id(&state.db, &song_id)
+            .await?
+            .ok_or_else(|| Error::SongNotFound {
+                id: song_id.clone(),
+            })?;
+
+        let validation_result =
+            ListenValidator::validate_listen(&state.db, &song_id, user_id, Some(&client_ip), song.duration.as_secs())
+                .await?;
+
+        if let ValidationResult::RateLimited {
+            reason,
+            retry_after_secs,
+        } = validation_result
+        {
+            return Err(Error::RateLimited {
+                reason,
+                retry_after_secs,
+            });
+        }
+
+        let result =
+            SongService::listen_to_song(&state.db, &song_id, user_id, song.duration)
+                .await?;
 
         Ok(Json(result))
     }

@@ -250,9 +250,7 @@ impl AlbumService {
                 .await?;
 
             #[derive(serde::Deserialize)]
-            struct UpdateResult {
-                total_listens: Option<u64>,
-            }
+            struct UpdateResult {}
 
             let updated: Vec<UpdateResult> = update_response.take(0)?;
 

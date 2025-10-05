@@ -5,10 +5,13 @@ use crate::models::database_helpers::CountResult;
 use crate::models::pagination::{PaginatedResponse, PaginationInfo, PaginationQuery};
 use crate::models::song::{Song, SongWithRelations};
 use crate::services::badge_service::{BadgeService, BadgeUnlockResult};
-use crate::Error;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use surrealdb::{engine::any::Any, sql::Thing, Surreal};
+use surrealdb::{
+    engine::any::Any,
+    sql::{Duration, Thing},
+    Surreal,
+};
 
 #[derive(Debug, Serialize)]
 pub struct ListenResult {
@@ -19,24 +22,23 @@ pub struct ListenResult {
 pub struct SongService;
 
 impl SongService {
+    pub async fn get_song_by_id(db: &Surreal<Any>, song_id: &str) -> Result<Option<Song>> {
+        let song_thing = create_song_thing(song_id);
+        let song: Option<Song> = db
+            .query("SELECT * FROM $song_id LIMIT 1")
+            .bind(("song_id", song_thing))
+            .await?
+            .take(0)?;
+        Ok(song)
+    }
+
     pub async fn listen_to_song(
         db: &Surreal<Any>,
         song_id: &str,
         user_id: Option<&str>,
+        song_duration: Duration,
     ) -> Result<ListenResult> {
         let song_thing = create_song_thing(song_id);
-
-        let song: Option<Song> = db
-            .query("SELECT * FROM $song_id LIMIT 1")
-            .bind(("song_id", song_thing.clone()))
-            .await?
-            .take(0)?;
-        let song = song.ok_or_else(|| Error::SongNotFound {
-            id: song_id.to_string(),
-        })?;
-
-        let song_duration = song.duration;
-
         let mut badge_result = None;
 
         if let Some(user_id) = user_id {
@@ -72,9 +74,7 @@ impl SongService {
                 .await?;
 
             #[derive(Deserialize)]
-            struct UpdateResult {
-                total_listens: Option<u64>,
-            }
+            struct UpdateResult {}
 
             let updated: Vec<UpdateResult> = update_response.take(0)?;
 
@@ -499,7 +499,7 @@ mod tests {
         let db = setup_db().await;
         let song_id = create_test_song(&db, "song1", "Test Song 1").await;
 
-        let result = SongService::listen_to_song(&db, &song_id, None).await;
+        let result = SongService::listen_to_song(&db, &song_id, None, Duration::new(180, 0)).await;
         assert!(result.is_ok());
         assert!(result.unwrap().badge_result.is_none());
 
@@ -520,7 +520,8 @@ mod tests {
         let user_id = create_test_user(&db, "user1").await;
         let song_id = create_test_song(&db, "song1", "Test Song 1").await;
 
-        let result = SongService::listen_to_song(&db, &song_id, Some(&user_id)).await;
+        let result =
+            SongService::listen_to_song(&db, &song_id, Some(&user_id), Duration::new(180, 0)).await;
         assert!(result.is_ok());
 
         let check_query = "SELECT * FROM user_listens_song WHERE in = $user_id AND out = $song_id";
@@ -542,7 +543,8 @@ mod tests {
         assert_eq!(relations[0].total_listens, 1);
         assert_eq!(relations[0].total_duration, Duration::new(180, 0));
 
-        let result = SongService::listen_to_song(&db, &song_id, Some(&user_id)).await;
+        let result =
+            SongService::listen_to_song(&db, &song_id, Some(&user_id), Duration::new(180, 0)).await;
         assert!(result.is_ok());
 
         let mut response = db
@@ -558,16 +560,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_listen_to_nonexistent_song() {
-        let db = setup_db().await;
-        let user_id = create_test_user(&db, "user1").await;
-
-        let result = SongService::listen_to_song(&db, "nonexistent", Some(&user_id)).await;
-        assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), Error::SongNotFound { .. }));
-    }
-
-    #[tokio::test]
     async fn test_get_user_recent_listens() {
         let db = setup_db().await;
         let user_id = create_test_user(&db, "user1").await;
@@ -576,15 +568,15 @@ mod tests {
         let song2_id = create_test_song(&db, "song2", "Song 2").await;
         let song3_id = create_test_song(&db, "song3", "Song 3").await;
 
-        SongService::listen_to_song(&db, &song1_id, Some(&user_id))
+        SongService::listen_to_song(&db, &song1_id, Some(&user_id), Duration::new(180, 0))
             .await
             .unwrap();
         tokio::time::sleep(std::time::Duration::from_millis(10)).await;
-        SongService::listen_to_song(&db, &song2_id, Some(&user_id))
+        SongService::listen_to_song(&db, &song2_id, Some(&user_id), Duration::new(180, 0))
             .await
             .unwrap();
         tokio::time::sleep(std::time::Duration::from_millis(10)).await;
-        SongService::listen_to_song(&db, &song3_id, Some(&user_id))
+        SongService::listen_to_song(&db, &song3_id, Some(&user_id), Duration::new(180, 0))
             .await
             .unwrap();
 
@@ -633,10 +625,10 @@ mod tests {
         let song1_id = create_test_song(&db, "song1", "Song 1").await;
         let song2_id = create_test_song(&db, "song2", "Song 2").await;
 
-        SongService::listen_to_song(&db, &song1_id, Some(&user_id))
+        SongService::listen_to_song(&db, &song1_id, Some(&user_id), Duration::new(180, 0))
             .await
             .unwrap();
-        SongService::listen_to_song(&db, &song2_id, Some(&user_id))
+        SongService::listen_to_song(&db, &song2_id, Some(&user_id), Duration::new(180, 0))
             .await
             .unwrap();
 
@@ -679,7 +671,7 @@ mod tests {
         let song_id = create_test_song(&db, "song1", "Test Song").await;
 
         for _ in 0..3 {
-            SongService::listen_to_song(&db, &song_id, Some(&user_id))
+            SongService::listen_to_song(&db, &song_id, Some(&user_id), Duration::new(180, 0))
                 .await
                 .unwrap();
             tokio::time::sleep(std::time::Duration::from_millis(10)).await;
@@ -719,16 +711,16 @@ mod tests {
         let song3_id = create_test_song(&db, "song3", "Least Popular").await;
 
         for _ in 0..5 {
-            SongService::listen_to_song(&db, &song1_id, Some(&user_id))
+            SongService::listen_to_song(&db, &song1_id, Some(&user_id), Duration::new(180, 0))
                 .await
                 .unwrap();
         }
         for _ in 0..3 {
-            SongService::listen_to_song(&db, &song2_id, Some(&user_id))
+            SongService::listen_to_song(&db, &song2_id, Some(&user_id), Duration::new(180, 0))
                 .await
                 .unwrap();
         }
-        SongService::listen_to_song(&db, &song3_id, Some(&user_id))
+        SongService::listen_to_song(&db, &song3_id, Some(&user_id), Duration::new(180, 0))
             .await
             .unwrap();
 
@@ -752,7 +744,7 @@ mod tests {
             let song_id =
                 create_test_song(&db, &format!("song{}", i), &format!("Song {}", i)).await;
             for _ in 0..i {
-                SongService::listen_to_song(&db, &song_id, Some(&user_id))
+                SongService::listen_to_song(&db, &song_id, Some(&user_id), Duration::new(180, 0))
                     .await
                     .unwrap();
             }
@@ -833,7 +825,7 @@ mod tests {
         let user_id = create_test_user(&db, "user1").await;
 
         let song_id = create_test_song(&db, "song1", "Test Song").await;
-        SongService::listen_to_song(&db, &song_id, Some(&user_id))
+        SongService::listen_to_song(&db, &song_id, Some(&user_id), Duration::new(180, 0))
             .await
             .unwrap();
 
@@ -880,7 +872,7 @@ mod tests {
         // Run sequential listens instead of concurrent to ensure each one completes
         // This avoids race conditions in test environment
         for _ in 0..5 {
-            SongService::listen_to_song(&db, &song_id, Some(&user_id))
+            SongService::listen_to_song(&db, &song_id, Some(&user_id), Duration::new(180, 0))
                 .await
                 .unwrap();
         }
@@ -910,7 +902,7 @@ mod tests {
         let song_id = create_test_song(&db, "song1", "Test Song").await;
 
         for _ in 0..35 {
-            SongService::listen_to_song(&db, &song_id, Some(&user_id))
+            SongService::listen_to_song(&db, &song_id, Some(&user_id), Duration::new(180, 0))
                 .await
                 .unwrap();
         }
@@ -937,7 +929,7 @@ mod tests {
 
         // Listen 10 times
         for _ in 0..10 {
-            SongService::listen_to_song(&db, &song_id, Some(&user_id))
+            SongService::listen_to_song(&db, &song_id, Some(&user_id), Duration::new(180, 0))
                 .await
                 .unwrap();
         }
@@ -988,7 +980,8 @@ mod tests {
 
         let song_id = created_song.id.unwrap().id.to_string();
 
-        let result = SongService::listen_to_song(&db, &song_id, Some(&user_id)).await;
+        let result =
+            SongService::listen_to_song(&db, &song_id, Some(&user_id), Duration::new(0, 0)).await;
         assert!(result.is_ok());
 
         let history = SongService::get_user_song_history(&db, &user_id, &song_id)
@@ -1007,7 +1000,7 @@ mod tests {
         let song_id = create_test_song(&db, "song_to_delete", "Doomed Song").await;
 
         // Listen to the song
-        SongService::listen_to_song(&db, &song_id, Some(&user_id))
+        SongService::listen_to_song(&db, &song_id, Some(&user_id), Duration::new(180, 0))
             .await
             .unwrap();
 
@@ -1026,53 +1019,53 @@ mod tests {
         if let Some(hist) = history {
             assert!(hist["song"].is_null());
         }
-
-        // Try to listen again - should fail
-        let result = SongService::listen_to_song(&db, &song_id, Some(&user_id)).await;
-        assert!(result.is_err());
     }
 
     #[tokio::test]
-async fn test_badge_service_failure_doesnt_prevent_listen() {
-    // Test que l'écoute fonctionne même avec des valeurs extrêmes (mais valides)
-    let db = setup_db().await;
+    async fn test_badge_service_failure_doesnt_prevent_listen() {
+        // Test que l'écoute fonctionne même avec des valeurs extrêmes (mais valides)
+        let db = setup_db().await;
 
-    // Use high but valid values instead of MAX values
-    let user_content = UserRecord {
-        id: Some(create_user_thing("extreme_user")),
-        username: "extreme_user".to_string(),
-        password: "hashed".to_string(),
-        created_at: Datetime::default(),
-        listen_count: 999_999_999,            // High but valid u32
-        total_listening_time: 999_999_999_999, // High but valid u64
-        favorite_count: 65000,                 // Near u16 max
-        listening_streak: 10000,
-        badges: Vec::new(),
-        level: 9999,
-        experience_points: 999_999_999,
-    };
+        // Use high but valid values instead of MAX values
+        let user_content = UserRecord {
+            id: Some(create_user_thing("extreme_user")),
+            username: "extreme_user".to_string(),
+            password: "hashed".to_string(),
+            created_at: Datetime::default(),
+            listen_count: 999_999_999,             // High but valid u32
+            total_listening_time: 999_999_999_999, // High but valid u64
+            favorite_count: 65000,                 // Near u16 max
+            listening_streak: 10000,
+            badges: Vec::new(),
+            level: 9999,
+            experience_points: 999_999_999,
+        };
 
-    let user: UserRecord = db
-        .create("user")
-        .content(user_content)
-        .await
-        .unwrap()
-        .expect("User creation returned nothing");
-    
-    let user_id = user.id.unwrap().id.to_string();
-    let song_id = create_test_song(&db, "song1", "Test Song").await;
+        let user: UserRecord = db
+            .create("user")
+            .content(user_content)
+            .await
+            .unwrap()
+            .expect("User creation returned nothing");
 
-    // Should still work with extreme values
-    let result = SongService::listen_to_song(&db, &song_id, Some(&user_id)).await;
-    assert!(result.is_ok(), "Listen should succeed even with extreme user values");
-    
-    // Verify the listen was recorded
-    let history = SongService::get_user_song_history(&db, &user_id, &song_id)
-        .await
-        .unwrap();
-    assert!(history.is_some());
-    assert_eq!(history.unwrap()["total_listens"], 1);
-}
+        let user_id = user.id.unwrap().id.to_string();
+        let song_id = create_test_song(&db, "song1", "Test Song").await;
+
+        // Should still work with extreme values
+        let result =
+            SongService::listen_to_song(&db, &song_id, Some(&user_id), Duration::new(180, 0)).await;
+        assert!(
+            result.is_ok(),
+            "Listen should succeed even with extreme user values"
+        );
+
+        // Verify the listen was recorded
+        let history = SongService::get_user_song_history(&db, &user_id, &song_id)
+            .await
+            .unwrap();
+        assert!(history.is_some());
+        assert_eq!(history.unwrap()["total_listens"], 1);
+    }
 
     #[tokio::test]
     async fn test_get_recent_listens_with_date_filter() {
@@ -1083,7 +1076,7 @@ async fn test_badge_service_failure_doesnt_prevent_listen() {
 
         // Listen multiple times
         for _ in 0..5 {
-            SongService::listen_to_song(&db, &song_id, Some(&user_id))
+            SongService::listen_to_song(&db, &song_id, Some(&user_id), Duration::new(180, 0))
                 .await
                 .unwrap();
             tokio::time::sleep(std::time::Duration::from_millis(100)).await;
@@ -1133,7 +1126,8 @@ async fn test_badge_service_failure_doesnt_prevent_listen() {
             .unwrap();
 
         // Add one more listen - should not overflow
-        let result = SongService::listen_to_song(&db, &song_id, Some(&user_id)).await;
+        let result =
+            SongService::listen_to_song(&db, &song_id, Some(&user_id), Duration::new(180, 0)).await;
         assert!(result.is_ok());
 
         let history = SongService::get_user_song_history(&db, &user_id, &song_id)
@@ -1154,14 +1148,14 @@ async fn test_badge_service_failure_doesnt_prevent_listen() {
 
         // User 1 listens 5 times
         for _ in 0..5 {
-            SongService::listen_to_song(&db, &song_id, Some(&user1_id))
+            SongService::listen_to_song(&db, &song_id, Some(&user1_id), Duration::new(180, 0))
                 .await
                 .unwrap();
         }
 
         // User 2 listens 2 times
         for _ in 0..2 {
-            SongService::listen_to_song(&db, &song_id, Some(&user2_id))
+            SongService::listen_to_song(&db, &song_id, Some(&user2_id), Duration::new(180, 0))
                 .await
                 .unwrap();
         }
